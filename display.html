@@ -1088,23 +1088,23 @@
                 // Create content
                 popup.innerHTML = `
                     <div class="flex justify-between items-start">
-                        <div>
+                        <div class="flex-1">
                             <div class="flex items-center">
-                                <h3 class="font-bold text-lg text-red-800">${data.code}</h3>
+                                <h3 class="font-bold text-lg text-red-800">Nurse Call</h3>
                                 <span class="ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-xs font-medium rounded-full">ACTIVE</span>
                             </div>
-                            <p class="text-sm text-red-600 mt-1">Ruangan ${cleanRoom}</p>
-                            ${cleanBed ? `<p class="text-xs text-gray-600 mt-0.5">Bed ${cleanBed}</p>` : ''}
+                            <p class="text-sm text-red-600 mt-1 font-medium">Ruangan ${cleanRoom}</p>
+                            ${cleanBed ? `<p class="text-xs text-red-600 mt-0.5">Bed ${cleanBed}</p>` : ''}
                         </div>
                         <div class="flex flex-col items-end">
                             <span class="text-xs text-white px-2 py-1 rounded bg-red-500">${data.time}</span>
-                            <span class="text-xs text-red-500 mt-1">Nurse Call</span>
+                            <span class="text-xs text-red-500 mt-1">Kode: ${data.code}</span>
                         </div>
                     </div>
                     <div class="mt-3 flex items-center justify-between">
                         <div class="flex items-center">
                             <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                            <span class="ml-2 text-xs text-red-600">Menunggu Respon</span>
+                            <span class="ml-2 text-xs text-red-600 font-medium">Menunggu Respon</span>
                         </div>
                         <button class="text-xs text-white px-3 py-1.5 rounded-full bg-red-500 hover:bg-red-600 transition-colors">
                             <i class="fas fa-bell"></i> Active
@@ -1134,59 +1134,40 @@
                     popup.classList.remove('show', 'bg-red-50');
                     popup.classList.add('completed', 'bg-green-50');
                     
-                    // Update content
-                    const statusBadge = popup.querySelector('.rounded-full');
-                    if (statusBadge) {
-                        statusBadge.className = 'ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs font-medium rounded-full';
-                        statusBadge.textContent = 'COMPLETED';
-                    }
+                    // Get data for display
+                    const data = masterData.find(d => d.charCode === code);
+                    const cleanRoom = data ? data.roomName.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim() : 'Unknown';
+                    const cleanBed = data ? data.bedName.replace(/^(Bed|B\.)\s*/i, '').trim() : 'Unknown';
+                    const now = new Date();
+                    const currentTime = now.toLocaleTimeString('en-US', { hour12: false });
+                    
+                    // Update entire content to match the desired format
+                    popup.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <div class="flex items-center">
+                                    <h3 class="font-bold text-lg text-green-800">Telah Ditangani</h3>
+                                </div>
+                                <p class="text-sm text-green-600 mt-1 font-medium">Ruangan ${cleanRoom}</p>
+                                ${cleanBed ? `<p class="text-xs text-green-600 mt-0.5">Bed ${cleanBed}</p>` : ''}
+                            </div>
+                            <div class="flex flex-col items-end">
+                                <span class="text-xs text-white px-2 py-1 rounded bg-green-500">${currentTime}</span>
+                                <span class="text-xs text-green-500 mt-1">Nurse Call</span>
+                            </div>
+                        </div>
+                        <div class="mt-3 flex items-center justify-between">
+                            <div class="flex items-center">
+                                <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                                <span class="ml-2 text-xs text-green-600 font-medium">Telah di Respon</span>
+                            </div>
+                            <button class="text-xs text-white px-3 py-1.5 rounded-full bg-green-500 transition-colors">
+                                <i class="fas fa-check"></i> Selesai
+                            </button>
+                        </div>
+                    `;
 
-                    const waitingStatus = popup.querySelector('.flex.items-center');
-                    if (waitingStatus) {
-                        waitingStatus.innerHTML = `
-                            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
-                            <span class="ml-2 text-xs text-green-600">Telah Ditangani</span>
-                        `;
-                    }
-
-                    const button = popup.querySelector('button');
-                    if (button) {
-                        button.className = 'text-xs text-white px-3 py-1.5 rounded-full bg-green-500 transition-colors';
-                        button.innerHTML = '<i class="fas fa-check"></i> Selesai';
-                    }
-
-                    // Update all text colors to green theme
-                    const title = popup.querySelector('h3');
-                    if (title) title.className = 'font-bold text-lg text-green-800';
-
-                    const roomText = popup.querySelector('.text-red-600');
-                    if (roomText) roomText.className = 'text-sm text-green-600 mt-1';
-
-                    const nurseCallText = popup.querySelector('.text-red-500');
-                    if (nurseCallText) nurseCallText.className = 'text-xs text-green-500 mt-1';
-
-                    // Update all bed text color to green if exists
-                    const bedText = popup.querySelector('.text-gray-600');
-                    if (bedText) bedText.className = 'text-xs text-green-600 mt-0.5';
-
-                    // Update time badge to green
-                    const timeBadge = popup.querySelector('.bg-red-500');
-                    if (timeBadge) {
-                        timeBadge.classList.remove('bg-red-500');
-                        timeBadge.classList.add('bg-green-500');
-                    }
-
-                    // Remove any remaining red-themed classes and replace with green
-                    const allRedElements = popup.querySelectorAll('[class*="red"]');
-                    allRedElements.forEach(element => {
-                        const classes = element.className;
-                        element.className = classes
-                            .replace(/text-red-\d+/g, 'text-green-600')
-                            .replace(/bg-red-\d+/g, 'bg-green-500')
-                            .replace(/border-red-\d+/g, 'border-green-500');
-                    });
-
-                    console.log('✅ [DISPLAY] Notification popup updated to completed state for code:', code);
+                    console.log('✅ [DISPLAY] Notification popup updated to "Telah Ditangani" format for code:', code);
 
                     // Remove after delay
                     setTimeout(() => {
@@ -1198,7 +1179,7 @@
                                 console.log('🗑️ [DISPLAY] Notification popup removed after completed state for code:', code);
                             }
                         }, 500);
-                    }, 3000); // Show "completed" state for 3 seconds
+                    }, 5000); // Show "Telah Ditangani" state for 5 seconds
                 }
             }
 
@@ -1375,6 +1356,13 @@
                     return;
                 }
                 
+                console.log('📋 [DISPLAY] Found data for reset:', {
+                    originalCode,
+                    room: data.roomName,
+                    bed: data.bedName,
+                    hasPopup: activeNotifications.has(originalCode)
+                });
+                
                 // Update status alert menjadi 'completed' dalam activeAlerts
                 const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode);
                 if (alertIndex !== -1) {
@@ -1383,6 +1371,9 @@
                     activeAlerts[alertIndex].resetTime = now;
                     activeAlerts[alertIndex].resetTimeStr = formatDateTime(now);
                     console.log('✅ [DISPLAY] Updated alert status to completed for code:', originalCode);
+                } else {
+                    console.warn('⚠️ [DISPLAY] No active alert found for reset code:', originalCode);
+                    console.log('📋 [DISPLAY] Current active alerts:', activeAlerts.map(a => ({ code: a.code, status: a.status })));
                 }
                 
                 // Update status dalam callHistory juga
@@ -1395,10 +1386,14 @@
                     console.log('✅ [DISPLAY] Updated call history status to completed for code:', originalCode);
                 }
                 
-                // Trigger popup update dengan memanggil updateNotificationPopups
+                // Trigger popup update dengan memanggil resetNotification langsung
+                console.log('🔄 [DISPLAY] Triggering resetNotification for popup update...');
+                resetNotification(originalCode);
+                
+                // Also call updateNotificationPopups for consistency
                 updateNotificationPopups();
                 
-                // Schedule removal of completed alert setelah popup selesai ditampilkan (6 detik)
+                // Schedule removal of completed alert setelah popup selesai ditampilkan
                 setTimeout(() => {
                     const completedAlertIndex = activeAlerts.findIndex(alert => alert.code === originalCode && alert.status === 'completed');
                     if (completedAlertIndex !== -1) {
@@ -1407,33 +1402,34 @@
                         // Update ke main process setelah cleanup
                         updatePersistentStateToMain();
                     }
-                }, 6000); // 3 detik untuk popup completed + 3 detik buffer
+                }, 6000); // 5 detik untuk popup completed + 1 detik buffer
                 
                 // Stop blinking for shape
                 shapes.forEach(s => {
                     if (s.code === originalCode) {
                         s.blinking = false;
-                        console.log('Stopped blinking for shape:', s.code, s.type);
+                        console.log('🛑 [DISPLAY] Stopped blinking for shape:', s.code, s.type);
                     }
                 });
                 
                 // Remove from tracking blinking shapes
                 if (blinkingShapes.has(originalCode)) {
                     blinkingShapes.delete(originalCode);
+                    console.log('🛑 [DISPLAY] Removed from blinkingShapes:', originalCode);
                 }
                 
                 // Remove from persistent blinking
                 if (persistentBlinking.has(originalCode)) {
                     persistentBlinking.delete(originalCode);
-                    console.log('Removed from persistent blinking:', originalCode);
+                    console.log('🛑 [DISPLAY] Removed from persistent blinking:', originalCode);
                 }
                 
                 // Stop persistent sounds
                 ipcRenderer.invoke('stop-persistent-sounds', { code: originalCode }).then(result => {
                     if (result.success) {
-                        console.log('Persistent sound stopped for code:', originalCode);
+                        console.log('🔇 [DISPLAY] Persistent sound stopped for code:', originalCode);
                     } else {
-                        console.error('Failed to stop persistent sound:', result.error);
+                        console.error('❌ [DISPLAY] Failed to stop persistent sound:', result.error);
                     }
                 });
                 
