@@ -1,0 +1,201 @@
+const { app, BrowserWindow, ipcMain } = require('electron');
+const path = require('path');
+const { SerialPort } = require('serialport');
+const fs = require('fs');
+
+// Tambahkan inisialisasi @electron/remote
+try {
+    require('@electron/remote/main').initialize();
+} catch (e) {}
+
+let mainWindow;
+let serialPort = null;
+
+function createWindow() {
+    mainWindow = new BrowserWindow({
+        width: 1200,
+        height: 800,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+            enableRemoteModule: true // penting untuk @electron/remote
+        }
+    });
+
+    // Enable remote untuk window ini
+    try {
+        require('@electron/remote/main').enable(mainWindow.webContents);
+    } catch (e) {}
+
+    mainWindow.loadFile('index.html');
+    
+    // Uncomment untuk membuka DevTools saat development
+    // mainWindow.webContents.openDevTools();
+}
+
+// Fungsi untuk menyimpan data ke config.json
+function saveConfig(data) {
+    const configPath = path.join(__dirname, 'config.json');
+    try {
+        // Pastikan data yang akan disimpan valid
+        if (!data) {
+            console.error('Invalid data to save:', data);
+            return false;
+        }
+
+        // Jika file belum ada, buat struktur dasar
+        if (!fs.existsSync(configPath)) {
+            const initialData = {
+                masterData: [],
+                masterSettings: {},
+                alertSettings: {
+                    displayFormat: "K{room}B{bed}",
+                    customFormat: "",
+                    alertDuration: 30,
+                    soundEnabled: false
+                }
+            };
+            fs.writeFileSync(configPath, JSON.stringify(initialData, null, 2));
+        }
+
+        // Baca data yang ada
+        const existingData = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
+        // Gabungkan data baru dengan yang ada
+        const newData = {
+            ...existingData,
+            ...data
+        };
+
+        // Simpan kembali ke file
+        fs.writeFileSync(configPath, JSON.stringify(newData, null, 2));
+        console.log('Config saved successfully:', newData);
+        return true;
+    } catch (error) {
+        console.error('Error saving config:', error);
+        return false;
+    }
+}
+
+// Fungsi untuk membaca config.json
+function loadConfig() {
+    const configPath = path.join(__dirname, 'config.json');
+    try {
+        if (!fs.existsSync(configPath)) {
+            // Buat file config.json dengan struktur dasar
+            const initialData = {
+                masterData: [],
+                masterSettings: {},
+                alertSettings: {
+                    displayFormat: "K{room}B{bed}",
+                    customFormat: "",
+                    alertDuration: 30,
+                    soundEnabled: false
+                }
+            };
+            fs.writeFileSync(configPath, JSON.stringify(initialData, null, 2));
+            return initialData;
+        }
+        const data = fs.readFileSync(configPath, 'utf-8');
+        return JSON.parse(data);
+    } catch (error) {
+        console.error('Error loading config:', error);
+        return {
+            masterData: [],
+            masterSettings: {},
+            alertSettings: {
+                displayFormat: "K{room}B{bed}",
+                customFormat: "",
+                alertDuration: 30,
+                soundEnabled: false
+            }
+        };
+    }
+}
+
+app.whenReady().then(() => {
+    createWindow();
+
+    app.on('activate', function () {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+});
+
+app.on('window-all-closed', function () {
+    if (process.platform !== 'darwin') app.quit();
+});
+
+// IPC Handlers untuk komunikasi dengan renderer process
+ipcMain.handle('get-ports', async () => {
+    try {
+        const ports = await SerialPort.list();
+        return ports.map(port => ({
+            path: port.path,
+            manufacturer: port.manufacturer || 'Unknown',
+            serialNumber: port.serialNumber || 'Unknown'
+        }));
+    } catch (error) {
+        console.error('Error getting ports:', error);
+        return [];
+    }
+});
+
+ipcMain.handle('connect-port', async (event, { port, baudRate }) => {
+    try {
+        if (serialPort) {
+            await new Promise((resolve) => {
+                serialPort.close(resolve);
+            });
+        }
+
+        serialPort = new SerialPort({
+            path: port,
+            baudRate: parseInt(baudRate),
+            autoOpen: false
+        });
+
+        return new Promise((resolve, reject) => {
+            serialPort.open((err) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+
+                serialPort.on('data', (data) => {
+                    const code = data.toString().trim();
+                    if (mainWindow) {
+                        // Kirim data serial untuk kedua tujuan
+                        mainWindow.webContents.send('serial-data', code);
+                        mainWindow.webContents.send('serial-monitor-data', code);
+                    }
+                });
+
+                resolve(true);
+            });
+        });
+    } catch (error) {
+        console.error('Error connecting to port:', error);
+        throw error;
+    }
+});
+
+ipcMain.handle('disconnect-port', async () => {
+    if (serialPort) {
+        return new Promise((resolve) => {
+            serialPort.close(() => {
+                serialPort = null;
+                resolve(true);
+            });
+        });
+    }
+    return true;
+});
+
+// Handler untuk menyimpan config
+ipcMain.handle('save-config', async (event, data) => {
+    return saveConfig(data);
+});
+
+ipcMain.handle('load-config', async () => {
+    return loadConfig();
+}); 

@@ -1,0 +1,2545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Display - Nurse Call Response System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        @keyframes fab-bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-12px); }
+        }
+        .animate-fab-bounce {
+            animation: fab-bounce 2.5s infinite;
+        }
+        
+        /* Custom styles untuk maximize space usage */
+        .container {
+            max-width: 100%;
+        }
+        
+        /* Override Tailwind container constraints */
+        .w-full {
+            width: 100% !important;
+            max-width: none !important;
+        }
+        
+        /* Minimize margins and paddings */
+        body {
+            margin: 0;
+            padding: 0;
+        }
+        
+        #floorplan-container {
+            border-width: 1px;
+            margin: 0 auto;
+            display: block;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 1279px) {
+            .grid {
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+            }
+            
+            #floorplan-container {
+                height: calc(100vh - 200px) !important;
+            }
+            
+            .max-w-6xl {
+                max-width: 95%;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            #floorplan-container {
+                height: calc(100vh - 180px) !important;
+            }
+            
+            .max-w-6xl {
+                max-width: 98%;
+            }
+        }
+        
+        /* Centered floorplan styling */
+        .floorplan-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: calc(100vh - 200px);
+        }
+        
+        /* Center layout optimizations */
+        .max-w-6xl {
+            max-width: 72rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="w-full px-1 py-2">
+        <!-- Header -->
+        <div class="flex justify-center items-center mb-4 px-1">
+            <div class="text-center">
+                <h1 class="text-3xl font-bold text-blue-800">Nurse Call Response System</h1>
+                <p class="text-gray-600">Display Layout</p>
+            </div>
+        </div>
+
+        <!-- Centered Floorplan Area -->
+        <div class="floorplan-wrapper w-full px-1">
+            <div class="w-full max-w-6xl">
+                <div id="floorplan-container" class="relative border rounded-lg overflow-hidden bg-white shadow" style="min-height:calc(100vh - 280px);">
+                    <img id="floorplan-img" src="" class="w-full h-full object-contain" style="background:#f3f4f6;" />
+                    <canvas id="shape-canvas" class="absolute top-0 left-0"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Indicators - Fixed di kanan atas -->
+    <div class="fixed top-4 right-4 flex items-center space-x-3 z-40">
+        <div id="standby-indicator-card" class="bg-white p-2 rounded-lg shadow flex items-center">
+            <span id="standby-indicator" class="inline-block w-2.5 h-2.5 rounded-full bg-red-500 mr-2"></span>
+            <span class="font-mono text-xs">Standby</span>
+        </div>
+        <div id="sounds-indicator-card" class="bg-white p-2 rounded-lg shadow flex items-center">
+            <span id="sounds-indicator" class="inline-block w-2.5 h-2.5 rounded-full bg-red-500 mr-2"></span>
+            <span class="font-mono text-xs">Sounds</span>
+        </div>
+        <div class="bg-white p-2 rounded-lg shadow flex items-center">
+            <i class="fas fa-clock text-blue-500 mr-2 text-xs"></i>
+            <span id="current-time" class="font-mono text-xs">00:00:00</span>
+        </div>
+        <div class="bg-white p-2 rounded-lg shadow flex items-center">
+            <i class="fas fa-calendar-day text-blue-500 mr-2 text-xs"></i>
+            <span id="current-date" class="font-mono text-xs">01/01/2023</span>
+        </div>
+    </div>
+
+    <!-- Floating Action Buttons untuk Config -->
+    <div class="fixed bottom-8 left-8 flex flex-col items-start space-y-4 z-50">
+        <!-- Back Button sebagai FAB -->
+        <button id="back-to-dashboard" class="bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg w-14 h-14 flex items-center justify-center relative group">
+            <i class="fas fa-arrow-left text-xl"></i>
+            <span class="absolute left-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Kembali ke Dashboard</span>
+            </button>
+        
+        <!-- Upload Floor Plan FAB -->
+        <button id="btn-upload-floorplan" class="bg-purple-600 hover:bg-purple-700 text-white rounded-full shadow-lg w-14 h-14 flex items-center justify-center relative group">
+            <i class="fas fa-image text-xl"></i>
+            <span class="absolute left-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Upload Floor Plan</span>
+        </button>
+            <input type="file" id="upload-floorplan" accept="image/*" class="hidden" />
+    </div>
+
+    <div class="fixed bottom-8 right-8 flex flex-col items-end space-y-4 z-50">
+        <!-- Shape Management FABs -->
+        <button id="fab-delete-shape" class="bg-red-600 hover:bg-red-700 text-white rounded-full shadow-lg w-14 h-14 flex items-center justify-center animate-fab-bounce relative group">
+            <i class="fas fa-trash text-xl"></i>
+            <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Hapus Shape</span>
+            </button>
+        
+        <button id="fab-add-shape" class="bg-green-600 hover:bg-green-700 text-white rounded-full shadow-lg w-14 h-14 flex items-center justify-center animate-fab-bounce relative group">
+            <i class="fas fa-plus text-xl"></i>
+            <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Tambah Shape</span>
+        </button>
+        
+        <button id="fab-test-panel" class="bg-yellow-600 hover:bg-yellow-700 text-white rounded-full shadow-lg w-14 h-14 flex items-center justify-center animate-fab-bounce relative group">
+            <i class="fas fa-vial text-xl"></i>
+            <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Test Panel</span>
+        </button>
+        
+        <button id="fab-notification-settings" title="Notification Settings" class="bg-orange-600 hover:bg-orange-700 text-white rounded-full shadow-lg w-14 h-14 flex items-center justify-center animate-fab-bounce relative group">
+            <i class="fas fa-bell text-xl"></i>
+            <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Notification Settings</span>
+        </button>
+    </div>
+
+    <!-- Shape Selection Modal -->
+    <div id="shape-selection-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold text-gray-900">Tambah Shape</h3>
+                <button id="close-shape-selection" class="text-gray-400 hover:text-gray-500">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 mb-2">Pilih Kode</label>
+                    <select id="shape-selector" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
+                <option value="">Pilih Kode</option>
+            </select>
+                </div>
+                <div>
+                    <label class="block text-gray-700 mb-2">Pilih Shape</label>
+                    <select id="shape-type" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
+                <option value="">Pilih Shape</option>
+                <option value="NC">NC (Nurse Call) - Hijau</option>
+                <option value="KM">KM (Kamar Mandi) - Merah</option>
+                <option value="CB">CB (Call Bell) - Biru</option>
+            </select>
+                </div>
+                <div class="flex space-x-2">
+                    <button id="btn-add-shape" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded">
+                        <i class="fas fa-plus mr-2"></i>Tambah Shape
+            </button>
+                    <button id="btn-cancel-add" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded">
+                        Batal
+            </button>
+        </div>
+                </div>
+            </div>
+    </div>
+
+    <!-- Notification Settings Modal -->
+    <div id="notification-settings-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 p-6 border w-full max-w-2xl shadow-xl rounded-lg bg-white">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-xl font-semibold text-gray-900">Notification Display Settings</h3>
+                <button id="close-notification-settings" class="text-gray-400 hover:text-gray-500 p-2 rounded-lg hover:bg-gray-100">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div id="notification-settings-content" class="space-y-6">
+                <!-- Format Section -->
+                <div class="space-y-4">
+                    <h4 class="text-lg font-medium text-gray-800">Display Format</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-gray-700 mb-2">Text Format</label>
+                            <select id="display-notification-format" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="K{room}B{bed}">K{room}B{bed} (e.g., K1B1)</option>
+                                <option value="Room {room} Bed {bed}">Room {room} Bed {bed}</option>
+                                <option value="Bed {bed}, Room {room}">Bed {bed}, Room {room}</option>
+                                <option value="R{room}-B{bed}">R{room}-B{bed}</option>
+                                <option value="custom">Custom Format</option>
+                            </select>
+                        </div>
+                        <div id="custom-notification-format-container" class="hidden">
+                            <label class="block text-gray-700 mb-2">Custom Format</label>
+                            <input type="text" id="custom-notification-format" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="e.g., Room-{room}_Bed-{bed}">
+                            <p class="text-xs text-gray-500 mt-1">Use {room} for room number and {bed} for bed number</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Animation & Style Section -->
+                <div class="space-y-4">
+                    <h4 class="text-lg font-medium text-gray-800">Animation & Style</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-gray-700 mb-2">Animation Type</label>
+                            <select id="notification-animation" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="slide-right">Slide from Right</option>
+                                <option value="slide-left">Slide from Left</option>
+                                <option value="fade">Fade In/Out</option>
+                                <option value="bounce">Bounce</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 mb-2">Position</label>
+                            <select id="notification-position" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="top-right">Top Right</option>
+                                <option value="top-left">Top Left</option>
+                                <option value="bottom-right">Bottom Right</option>
+                                <option value="bottom-left">Bottom Left</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Timing & Behavior Section -->
+                <div class="space-y-4">
+                    <h4 class="text-lg font-medium text-gray-800">Timing & Behavior</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-gray-700 mb-2">Display Duration (seconds)</label>
+                            <input type="number" id="notification-alert-duration" min="5" max="600" value="30" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 mb-2">Animation Speed (ms)</label>
+                            <input type="number" id="notification-animation-speed" min="200" max="2000" value="500" step="100" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Style Preview -->
+                <div class="border rounded-lg p-4 bg-gray-50">
+                    <h4 class="text-lg font-medium text-gray-800 mb-3">Preview</h4>
+                    <div id="notification-preview" class="bg-white p-4 rounded-lg shadow-lg border-l-4 border-blue-500">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-bold text-lg text-blue-800">K1B1</h3>
+                                <p class="text-sm text-blue-600">Ruangan Anggrek 1</p>
+                            </div>
+                            <span class="text-xs text-white px-2 py-1 rounded bg-blue-500">16:21:06</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sound Settings -->
+                <div class="space-y-4">
+                    <h4 class="text-lg font-medium text-gray-800">Sound Settings</h4>
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="notification-sound-alert" class="w-5 h-5 text-blue-600">
+                            <label for="notification-sound-alert" class="ml-2 text-gray-700">Enable Sound Alert</label>
+                        </div>
+                        <button id="test-sound" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg">
+                            <i class="fas fa-volume-up mr-1"></i> Test Sound
+                        </button>
+                    </div>
+                </div>
+
+                <button id="apply-notification-settings" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg flex items-center justify-center transition-colors">
+                    <i class="fas fa-save mr-2"></i> Apply Settings
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* Animation Previews */
+        @keyframes slide-right {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes slide-left {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes fade {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .animate-slide-right { animation: slide-right 0.5s ease-out; }
+        .animate-slide-left { animation: slide-left 0.5s ease-out; }
+        .animate-fade { animation: fade 0.5s ease-out; }
+        .animate-bounce { animation: bounce 1s infinite; }
+    </style>
+
+    <!-- Test Panel Modal -->
+    <div id="test-panel-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold text-gray-900">Test Panel</h3>
+                <button id="close-test-panel" class="text-gray-400 hover:text-gray-500">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <!-- Manual Input -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Manual Input</label>
+                    <div class="flex flex-col space-y-2">
+                        <input type="text" id="display-manual-input" placeholder="Code (e.g., 101)" title="Masukkan kode manual (contoh: 101, 99, 901)" class="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-blue-500">
+                        <button id="display-manual-submit" title="Kirim kode manual" class="bg-green-600 hover:bg-green-700 text-white py-2 px-3 rounded text-sm w-full">
+                            <i class="fas fa-paper-plane mr-2"></i>Send Code
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Shape Status -->
+                <div class="border-t pt-3">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Shape Status</label>
+                    <div id="shape-status" class="text-xs bg-gray-50 p-2 rounded border">
+                        <div class="flex items-center justify-between">
+                            <span>Total Shapes:</span>
+                            <span id="shape-count" class="font-semibold">0</span>
+                        </div>
+                        <div class="flex items-center justify-between mt-1">
+                            <span>Synced with Master:</span>
+                            <span id="sync-status" class="font-semibold text-green-600">✓</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Info -->
+                <div class="text-xs text-gray-500 italic">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Manual input: 10[bed] untuk panggilan (blinking), 90[bed] untuk reset.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        // Variables
+        let masterData = [];
+        let shapes = [];
+        let floorplanImg = '';
+        let selectedShapeId = null;
+        let blinkingShapes = new Map(); // Untuk tracking shape yang sedang blinking
+        let displayConfig = {};
+        let standbyMode = false;
+        let soundFiles = [];
+        let isConnected = false;
+        let masterIsConnected = false;
+        let masterSelectedPort = "";
+        let lastStandbyNotification = null; // Untuk mencegah spam notifikasi standby
+        let dragging = null;
+        let resizing = null;
+        let resizeHandle = null;
+        let animationFrameId = null; // Untuk render loop yang smooth
+        let callHistory = []; // Untuk tracking call history
+        let activeAlerts = []; // Untuk tracking active alerts
+        let persistentSounds = new Map(); // Sounds yang tetap jalan sampai reset
+        let persistentBlinking = new Map(); // Blinking yang tetap jalan sampai reset
+        // Removed duplicate declaration - using the one defined in the function scope
+
+        // Notification settings variables
+        let notificationSettings = {
+            displayFormat: "K{room}B{bed}",
+            alertDuration: 30,
+            soundEnabled: false,
+            customFormat: ""
+        };
+
+        // Tambahkan notification system
+        function showNotification(type, message, duration = 5000) {
+            // Buat container jika belum ada
+            let container = document.getElementById('notification-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'notification-container';
+                container.className = 'fixed top-4 right-4 z-50';
+                document.body.appendChild(container);
+            }
+            
+            const notification = document.createElement('div');
+            
+            const bgColor = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                warning: 'bg-yellow-500',
+                info: 'bg-blue-500'
+            }[type] || 'bg-gray-500';
+            
+            notification.className = `${bgColor} text-white px-4 py-2 rounded shadow-lg mb-2 flex items-center`;
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'} mr-2"></i>
+                <span>${message}</span>
+            `;
+            
+            container.appendChild(notification);
+            
+            // Auto hide
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, duration);
+            
+            return notification;
+        }
+
+        // Update current time and date
+        function updateDateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
+            const dateStr = now.toLocaleDateString('en-GB');
+            document.getElementById('current-time').textContent = timeStr;
+            document.getElementById('current-date').textContent = dateStr;
+        }
+        
+        setInterval(updateDateTime, 1000);
+        updateDateTime();
+
+        // Back to dashboard button - kembali ke index.html di main window
+        document.getElementById('back-to-dashboard').addEventListener('click', async () => {
+            await ipcRenderer.invoke('back-to-main');
+        });
+
+        // Load masterData dari main process
+        async function loadMasterData() {
+            try {
+                const config = await ipcRenderer.invoke('load-config');
+                masterData = config.masterData || [];
+                const selector = document.getElementById('shape-selector');
+                if (selector) {
+                    selector.innerHTML = '<option value="">Pilih Kode</option>';
+                    masterData.forEach((d, i) => {
+                        // Tampilkan info shape jika ada
+                        const shapeInfo = d.shape ? ` [${d.shape}]` : '';
+                        const label = `${d.roomName} - ${d.bedName} (${d.charCode})${shapeInfo}`;
+                        selector.innerHTML += `<option value="${d.charCode}">${label}</option>`;
+                    });
+                }
+                console.log('Master data loaded:', masterData.length, 'items');
+                
+                // Load shapes berdasarkan master data yang sudah ada
+                await loadShapesFromMasterData();
+            } catch (error) {
+                console.error('Error loading master data:', error);
+            }
+        }
+
+        // Load shapes dari master data yang sudah memiliki shape configuration
+        async function loadShapesFromMasterData() {
+            try {
+                const config = await ipcRenderer.invoke('load-config');
+                const existingShapes = config.displayConfig?.shapes || [];
+                
+                // Jika belum ada shapes di display config, buat dari master data
+                if (existingShapes.length === 0 && masterData.length > 0) {
+                    const newShapes = [];
+                    masterData.forEach((item, index) => {
+                        if (item.shape && item.shape.trim() !== '') {
+                            // Buat shape berdasarkan master data
+                            const canvas = document.getElementById('shape-canvas');
+                            const canvasWidth = canvas.width || 800;
+                            const canvasHeight = canvas.height || 600;
+                            const defaultX = Math.max(100, canvasWidth * 0.15) + (index * 120); // Offset untuk multiple shapes
+                            const defaultY = Math.max(100, canvasHeight * 0.15) + ((index % 3) * 100);
+                            
+                            const newShape = {
+                                code: item.charCode,
+                                type: item.shape,
+                                x: defaultX,
+                                y: defaultY,
+                                width: 90,
+                                height: 70,
+                                blinking: false,
+                                color: getShapeColor(item.shape)
+                            };
+                            newShapes.push(newShape);
+                            console.log(`Created shape from master data: ${item.charCode} (${item.shape})`);
+                        }
+                    });
+                    
+                    if (newShapes.length > 0) {
+                        shapes = newShapes;
+                        await saveShapes(); // Save shapes yang baru dibuat
+                        showNotification('info', `Dibuat ${newShapes.length} shapes dari master data`);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading shapes from master data:', error);
+            }
+        }
+
+        // Upload floor plan
+        document.getElementById('btn-upload-floorplan').onclick = () => {
+            document.getElementById('upload-floorplan').click();
+        };
+        
+        document.getElementById('upload-floorplan').onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    floorplanImg = ev.target.result;
+                    renderFloorplan();
+                    saveShapes(); // Save to config.json
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        // Tambah shape
+        document.getElementById('btn-add-shape').onclick = async () => {
+            const code = document.getElementById('shape-selector').value;
+            const shapeType = document.getElementById('shape-type').value;
+            
+            if (!code) {
+                alert('Silakan pilih kode terlebih dahulu');
+                return;
+            }
+            if (!shapeType) {
+                alert('Silakan pilih tipe shape terlebih dahulu');
+                return;
+            }
+            
+            // Cek apakah kode sudah ada
+            if (shapes.find(s => s.code === code)) {
+                alert('Kode sudah ada, pilih kode yang berbeda');
+                return;
+            }
+            
+            // Posisi default yang lebih proporsional berdasarkan canvas size
+            const canvas = document.getElementById('shape-canvas');
+            
+            // Pastikan canvas sudah ter-render dengan ukuran yang benar
+            if (!canvas.width || canvas.width <= 0) {
+                renderShapes(); // Force render untuk mendapat ukuran yang benar
+                await new Promise(resolve => setTimeout(resolve, 100)); // Tunggu sebentar
+            }
+            
+            const canvasWidth = canvas.width || 800;
+            const canvasHeight = canvas.height || 600;
+            const defaultX = Math.max(100, canvasWidth * 0.15); // 15% dari lebar canvas, min 100px
+            const defaultY = Math.max(100, canvasHeight * 0.15); // 15% dari tinggi canvas, min 100px
+            
+            // Default posisi dan ukuran untuk persegi
+            const newShape = { 
+                code, 
+                type: shapeType,
+                x: defaultX, 
+                y: defaultY, 
+                width: 90,   // Lebar default yang lebih besar
+                height: 70,  // Tinggi default yang proporsional
+                blinking: false,
+                color: getShapeColor(shapeType)
+            };
+            shapes.push(newShape);
+            saveShapes(); // Ini akan trigger syncShapeWithMasterData
+            renderShapes();
+            
+            // Update selector untuk menampilkan info shape yang baru
+            await loadMasterData();
+            
+            // Reset selectors
+            document.getElementById('shape-selector').value = '';
+            document.getElementById('shape-type').value = '';
+            
+            showNotification('success', `Shape ${code} (${shapeType}) berhasil ditambahkan`);
+        };
+
+        // Render floorplan dan shapes
+        function renderFloorplan() {
+            const img = document.getElementById('floorplan-img');
+            if (floorplanImg) {
+                img.src = floorplanImg;
+                img.style.display = 'block';
+                img.onload = () => {
+                    // Reset lastCanvasSize saat gambar baru dimuat
+                    lastCanvasSize = { width: 0, height: 0 };
+                    // Pastikan canvas resize setelah gambar dimuat
+                    setTimeout(() => {
+                        updateCanvasSize();
+                        // Setup ulang resize observer untuk gambar baru
+                        if (resizeObserver) {
+                            resizeObserver.disconnect();
+                            resizeObserver = null;
+                        }
+                        setupResizeObserver();
+                    }, 100);
+                };
+            } else {
+                img.src = '';
+                img.style.display = 'none';
+                renderShapes();
+            }
+        }
+        
+        function renderShapes() {
+            const img = document.getElementById('floorplan-img');
+            const canvas = document.getElementById('shape-canvas');
+            const container = document.getElementById('floorplan-container');
+            
+            if (!img || !canvas || !container) return;
+            
+            // Pastikan canvas mengikuti ukuran gambar dengan lebih akurat
+            const imgRect = img.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            
+            // Hitung posisi relatif gambar terhadap container
+            const imgOffsetX = imgRect.left - containerRect.left;
+            const imgOffsetY = imgRect.top - containerRect.top;
+            
+            const actualWidth = imgRect.width || img.offsetWidth || 800;
+            const actualHeight = imgRect.height || img.offsetHeight || 600;
+            
+            // Set canvas size dan position untuk match dengan gambar
+            canvas.width = actualWidth;
+            canvas.height = actualHeight;
+            canvas.style.width = actualWidth + 'px';
+            canvas.style.height = actualHeight + 'px';
+            canvas.style.position = 'absolute';
+            canvas.style.top = imgOffsetY + 'px';
+            canvas.style.left = imgOffsetX + 'px';
+            canvas.style.pointerEvents = 'auto';
+            
+            // Debug canvas positioning (remove in production)
+            // console.log('Canvas positioning:', { imgOffset: { x: imgOffsetX, y: imgOffsetY }, canvasSize: { width: actualWidth, height: actualHeight } });
+            
+            // Update lastCanvasSize untuk tracking resize
+            if (!lastCanvasSize.width) {
+                lastCanvasSize = { width: actualWidth, height: actualHeight };
+            }
+            
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            shapes.forEach((shape, index) => {
+                ctx.save();
+                
+                // Pastikan shape memiliki ukuran default jika belum ada
+                if (!shape.width) shape.width = 90;
+                if (!shape.height) shape.height = 70;
+                
+                // Debug log posisi shape (remove in production)
+                // if (index === 0) console.log('Rendering shape:', { code: shape.code, position: { x: shape.x, y: shape.y } });
+                
+                // Pastikan posisi shape tidak keluar dari canvas
+                const maxX = canvas.width - shape.width / 2;
+                const maxY = canvas.height - shape.height / 2;
+                const minX = shape.width / 2;
+                const minY = shape.height / 2;
+                
+                shape.x = Math.max(minX, Math.min(maxX, shape.x));
+                shape.y = Math.max(minY, Math.min(maxY, shape.y));
+                
+                // Gambar persegi untuk semua shape
+                const x = shape.x - shape.width / 2;
+                const y = shape.y - shape.height / 2;
+                
+                ctx.beginPath();
+                ctx.rect(x, y, shape.width, shape.height);
+                
+                // Warna shape berdasarkan tipe dan status blinking
+                let baseColor = shape.color || '#2563eb';
+                if (shape.blinking) {
+                    // Berkedip dengan warna terang - menggunakan sistem yang lebih smooth
+                    const now = Date.now();
+                    const blinkCycle = (now % 1000) / 1000; // 1 detik cycle
+                    const opacity = 0.5 + 0.5 * Math.sin(blinkCycle * Math.PI * 4); // 4 kali kedip per detik
+                    
+                    // Alternating antara warna asli dan putih
+                    if (Math.sin(blinkCycle * Math.PI * 4) > 0) {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.globalAlpha = 0.9;
+                    } else {
+                        ctx.fillStyle = baseColor;
+                        ctx.globalAlpha = 0.8;
+                    }
+                } else {
+                    ctx.fillStyle = baseColor;
+                    ctx.globalAlpha = 0.9;
+                }
+                
+                ctx.fill();
+                
+                // Jika shape dipilih, gambar resize handles
+                if (selectedShapeId === shape.code) {
+                    drawResizeHandles(ctx, shape);
+                }
+                
+                // Text label dengan kontras yang lebih baik
+                ctx.globalAlpha = 1;
+                ctx.font = 'bold 11px sans-serif';
+                
+                // Dynamic text color berdasarkan background
+                if (shape.blinking) {
+                    const now = Date.now();
+                    const blinkCycle = (now % 1000) / 1000;
+                    ctx.fillStyle = Math.sin(blinkCycle * Math.PI * 4) > 0 ? '#000000' : '#ffffff';
+                } else {
+                    // Gunakan warna kontras yang baik
+                    const brightness = getBrightness(baseColor);
+                    ctx.fillStyle = brightness > 128 ? '#000000' : '#ffffff';
+                }
+                
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // Tampilkan kode dan tipe dengan spacing yang proporsional
+                const lines = [shape.code, shape.type];
+                const lineHeight = 12;
+                const totalHeight = lines.length * lineHeight;
+                const startY = shape.y - totalHeight / 2 + lineHeight / 2;
+                
+                lines.forEach((line, index) => {
+                    ctx.fillText(line, shape.x, startY + index * lineHeight);
+                });
+                
+                ctx.restore();
+            });
+            
+            // Request next frame untuk animasi yang smooth jika ada shape yang blinking
+            const hasBlinkingShapes = shapes.some(shape => shape.blinking);
+            if (hasBlinkingShapes) {
+                animationFrameId = requestAnimationFrame(renderShapes);
+            } else {
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+            }
+            
+            // Update shape count jika elemen ada (untuk avoid error saat pertama load)
+            if (document.getElementById('shape-count')) {
+                updateShapeStatus();
+            }
+        }
+
+        // Helper function untuk menghitung brightness warna
+        function getBrightness(color) {
+            // Convert hex to RGB
+            const hex = color.replace('#', '');
+            const r = parseInt(hex.substr(0, 2), 16);
+            const g = parseInt(hex.substr(2, 2), 16);
+            const b = parseInt(hex.substr(4, 2), 16);
+            
+            // Calculate brightness
+            return (r * 299 + g * 587 + b * 114) / 1000;
+        }
+
+        // Gambar resize handles untuk shape yang dipilih
+        function drawResizeHandles(ctx, shape) {
+            const handleSize = 8;
+            const x = shape.x - shape.width / 2;
+            const y = shape.y - shape.height / 2;
+            
+            // Handle positions
+            const handles = [
+                { x: x - handleSize/2, y: y - handleSize/2, cursor: 'nw-resize', type: 'nw' }, // Top-left
+                { x: x + shape.width - handleSize/2, y: y - handleSize/2, cursor: 'ne-resize', type: 'ne' }, // Top-right
+                { x: x - handleSize/2, y: y + shape.height - handleSize/2, cursor: 'sw-resize', type: 'sw' }, // Bottom-left
+                { x: x + shape.width - handleSize/2, y: y + shape.height - handleSize/2, cursor: 'se-resize', type: 'se' }, // Bottom-right
+                { x: x + shape.width/2 - handleSize/2, y: y - handleSize/2, cursor: 'n-resize', type: 'n' }, // Top
+                { x: x + shape.width/2 - handleSize/2, y: y + shape.height - handleSize/2, cursor: 's-resize', type: 's' }, // Bottom
+                { x: x - handleSize/2, y: y + shape.height/2 - handleSize/2, cursor: 'w-resize', type: 'w' }, // Left
+                { x: x + shape.width - handleSize/2, y: y + shape.height/2 - handleSize/2, cursor: 'e-resize', type: 'e' } // Right
+            ];
+            
+            // Gambar handles
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 1;
+            
+            handles.forEach(handle => {
+                ctx.fillRect(handle.x, handle.y, handleSize, handleSize);
+                ctx.strokeRect(handle.x, handle.y, handleSize, handleSize);
+            });
+        }
+
+        // Cek apakah mouse berada di atas resize handle
+        function getResizeHandle(shape, mouseX, mouseY) {
+            if (selectedShapeId !== shape.code) return null;
+            
+            const handleSize = 8;
+            const x = shape.x - shape.width / 2;
+            const y = shape.y - shape.height / 2;
+            
+            const handles = [
+                { x: x - handleSize/2, y: y - handleSize/2, type: 'nw' },
+                { x: x + shape.width - handleSize/2, y: y - handleSize/2, type: 'ne' },
+                { x: x - handleSize/2, y: y + shape.height - handleSize/2, type: 'sw' },
+                { x: x + shape.width - handleSize/2, y: y + shape.height - handleSize/2, type: 'se' },
+                { x: x + shape.width/2 - handleSize/2, y: y - handleSize/2, type: 'n' },
+                { x: x + shape.width/2 - handleSize/2, y: y + shape.height - handleSize/2, type: 's' },
+                { x: x - handleSize/2, y: y + shape.height/2 - handleSize/2, type: 'w' },
+                { x: x + shape.width - handleSize/2, y: y + shape.height/2 - handleSize/2, type: 'e' }
+            ];
+            
+            for (let handle of handles) {
+                if (mouseX >= handle.x && mouseX <= handle.x + handleSize &&
+                    mouseY >= handle.y && mouseY <= handle.y + handleSize) {
+                    return handle.type;
+                }
+            }
+            
+            return null;
+        }
+
+        // Cek apakah mouse berada di dalam shape
+        function isInsideShape(shape, mouseX, mouseY) {
+            const x = shape.x - shape.width / 2;
+            const y = shape.y - shape.height / 2;
+            return mouseX >= x && mouseX <= x + shape.width &&
+                   mouseY >= y && mouseY <= y + shape.height;
+        }
+
+        // Fungsi untuk mendapatkan warna shape berdasarkan tipe
+        function getShapeColor(type) {
+            switch(type) {
+                case 'NC': return '#22c55e'; // Hijau
+                case 'KM': return '#ef4444'; // Merah
+                case 'CB': return '#3b82f6'; // Biru
+                default: return '#6b7280';   // Abu-abu
+            }
+        }
+
+
+
+        // Drag & drop shape dengan resize functionality
+        document.getElementById('shape-canvas').onmousedown = function(e) {
+            const rect = this.getBoundingClientRect();
+            
+            // Konversi koordinat mouse ke koordinat canvas
+            const scaleX = this.width / rect.width;
+            const scaleY = this.height / rect.height;
+            const mouseX = (e.clientX - rect.left) * scaleX;
+            const mouseY = (e.clientY - rect.top) * scaleY;
+            
+            // Debug log (remove in production)
+            // console.log('Mouse down:', { mouseX, mouseY, scaleX, scaleY });
+            
+            // Reset states
+            dragging = null;
+            resizing = null;
+            resizeHandle = null;
+            
+            // Cari shape yang diklik
+            for (let shape of shapes) {
+                // Cek resize handle dulu jika shape sedang dipilih
+                if (selectedShapeId === shape.code) {
+                    const handle = getResizeHandle(shape, mouseX, mouseY);
+                    if (handle) {
+                        resizing = shape;
+                        resizeHandle = handle;
+                        this.style.cursor = getCursorForHandle(handle);
+                        return;
+                    }
+                }
+                
+                // Cek apakah di dalam shape
+                if (isInsideShape(shape, mouseX, mouseY)) {
+                    selectedShapeId = shape.code;
+                    dragging = shape;
+                    this.style.cursor = 'move';
+                    renderShapes();
+                    return;
+                }
+            }
+            
+            // Jika tidak ada yang diklik, hapus selection
+            selectedShapeId = null;
+            renderShapes();
+        };
+        
+        document.onmousemove = function(e) {
+            const canvas = document.getElementById('shape-canvas');
+            const rect = canvas.getBoundingClientRect();
+            
+            // Konversi koordinat mouse ke koordinat canvas
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const mouseX = (e.clientX - rect.left) * scaleX;
+            const mouseY = (e.clientY - rect.top) * scaleY;
+            
+            if (resizing && resizeHandle) {
+                // Resize shape
+                const shape = resizing;
+                const minSize = 20; // Ukuran minimum
+                
+                // Simpan edge positions untuk reference
+                const leftEdge = shape.x - shape.width/2;
+                const rightEdge = shape.x + shape.width/2;
+                const topEdge = shape.y - shape.height/2;
+                const bottomEdge = shape.y + shape.height/2;
+                
+                switch (resizeHandle) {
+                    case 'nw':
+                        // Top-left: hanya ubah left dan top edge
+                        const newWidthNW = rightEdge - mouseX;
+                        const newHeightNW = bottomEdge - mouseY;
+                        if (newWidthNW >= minSize && newHeightNW >= minSize) {
+                            shape.width = newWidthNW;
+                            shape.height = newHeightNW;
+                            shape.x = rightEdge - shape.width/2;
+                            shape.y = bottomEdge - shape.height/2;
+                        }
+                        break;
+                    case 'ne':
+                        // Top-right: hanya ubah right dan top edge
+                        const newWidthNE = mouseX - leftEdge;
+                        const newHeightNE = bottomEdge - mouseY;
+                        if (newWidthNE >= minSize && newHeightNE >= minSize) {
+                            shape.width = newWidthNE;
+                            shape.height = newHeightNE;
+                            shape.x = leftEdge + shape.width/2;
+                            shape.y = bottomEdge - shape.height/2;
+                        }
+                        break;
+                    case 'sw':
+                        // Bottom-left: hanya ubah left dan bottom edge
+                        const newWidthSW = rightEdge - mouseX;
+                        const newHeightSW = mouseY - topEdge;
+                        if (newWidthSW >= minSize && newHeightSW >= minSize) {
+                            shape.width = newWidthSW;
+                            shape.height = newHeightSW;
+                            shape.x = rightEdge - shape.width/2;
+                            shape.y = topEdge + shape.height/2;
+                        }
+                        break;
+                    case 'se':
+                        // Bottom-right: hanya ubah right dan bottom edge
+                        const newWidthSE = mouseX - leftEdge;
+                        const newHeightSE = mouseY - topEdge;
+                        if (newWidthSE >= minSize && newHeightSE >= minSize) {
+                            shape.width = newWidthSE;
+                            shape.height = newHeightSE;
+                            shape.x = leftEdge + shape.width/2;
+                            shape.y = topEdge + shape.height/2;
+                        }
+                        break;
+                    case 'n':
+                        // Top: hanya ubah top edge
+                        const newHeightN = bottomEdge - mouseY;
+                        if (newHeightN >= minSize) {
+                            shape.height = newHeightN;
+                            shape.y = bottomEdge - shape.height/2;
+                        }
+                        break;
+                    case 's':
+                        // Bottom: hanya ubah bottom edge
+                        const newHeightS = mouseY - topEdge;
+                        if (newHeightS >= minSize) {
+                            shape.height = newHeightS;
+                            shape.y = topEdge + shape.height/2;
+                        }
+                        break;
+                    case 'w':
+                        // Left: hanya ubah left edge
+                        const newWidthW = rightEdge - mouseX;
+                        if (newWidthW >= minSize) {
+                            shape.width = newWidthW;
+                            shape.x = rightEdge - shape.width/2;
+                        }
+                        break;
+                    case 'e':
+                        // Right: hanya ubah right edge
+                        const newWidthE = mouseX - leftEdge;
+                        if (newWidthE >= minSize) {
+                            shape.width = newWidthE;
+                            shape.x = leftEdge + shape.width/2;
+                        }
+                        break;
+                }
+                renderShapes();
+            } else if (dragging) {
+                // Drag shape
+                dragging.x = mouseX;
+                dragging.y = mouseY;
+                renderShapes();
+            } else {
+                // Update cursor berdasarkan posisi mouse (gunakan koordinat yang sudah dikonversi)
+                let cursor = 'default';
+                
+                for (let shape of shapes) {
+                    if (selectedShapeId === shape.code) {
+                        const handle = getResizeHandle(shape, mouseX, mouseY);
+                        if (handle) {
+                            cursor = getCursorForHandle(handle);
+                            break;
+                        }
+                    }
+                    
+                    if (isInsideShape(shape, mouseX, mouseY)) {
+                        cursor = 'move';
+                        break;
+                    }
+                }
+                
+                canvas.style.cursor = cursor;
+            }
+        };
+        
+        document.onmouseup = function() {
+            if (dragging || resizing) {
+                saveShapes();
+                dragging = null;
+                resizing = null;
+                resizeHandle = null;
+                
+                const canvas = document.getElementById('shape-canvas');
+                canvas.style.cursor = 'default';
+            }
+        };
+
+        // Get cursor style untuk resize handle
+        function getCursorForHandle(handle) {
+            const cursors = {
+                'nw': 'nw-resize',
+                'ne': 'ne-resize',
+                'sw': 'sw-resize',
+                'se': 'se-resize',
+                'n': 'n-resize',
+                's': 's-resize',
+                'w': 'w-resize',
+                'e': 'e-resize'
+            };
+            return cursors[handle] || 'default';
+        }
+
+        // Save/load shapes & floorplan ke config.json
+        async function saveShapes() {
+            try {
+                const configData = {
+                    shapes: shapes,
+                    floorplanImg: floorplanImg,
+                    blinkingSettings: displayConfig.blinkingSettings || { duration: 200, enabled: true }
+                };
+                await ipcRenderer.invoke('update-display-config', configData);
+                
+                // Sinkronisasi dengan master data - update field shape
+                await syncShapeWithMasterData();
+                
+                console.log('Display config saved successfully');
+            } catch (error) {
+                console.error('Error saving display config:', error);
+            }
+        }
+
+        // Fungsi untuk sinkronisasi shape dengan master data
+        async function syncShapeWithMasterData() {
+            try {
+                const config = await ipcRenderer.invoke('load-config');
+                let masterData = config.masterData || [];
+                let hasChanges = false;
+
+                // Update master data berdasarkan shapes yang ada
+                shapes.forEach(shape => {
+                    const masterIndex = masterData.findIndex(item => item.charCode === shape.code);
+                    if (masterIndex !== -1) {
+                        // Update field shape di master data jika berbeda
+                        if (masterData[masterIndex].shape !== shape.type) {
+                            masterData[masterIndex].shape = shape.type;
+                            hasChanges = true;
+                            console.log(`Updated shape for ${shape.code}: ${shape.type}`);
+                        }
+                    }
+                });
+
+                // Reset field shape untuk kode yang tidak ada di shapes
+                masterData.forEach(item => {
+                    const shapeExists = shapes.find(shape => shape.code === item.charCode);
+                    if (!shapeExists && item.shape && item.shape.trim() !== '') {
+                        item.shape = '';
+                        hasChanges = true;
+                        console.log(`Cleared shape for ${item.charCode}`);
+                    }
+                });
+
+                // Save ke config jika ada perubahan
+                if (hasChanges) {
+                    const updatedConfig = {
+                        ...config,
+                        masterData: masterData
+                    };
+                    await ipcRenderer.invoke('save-config', updatedConfig);
+                    console.log('Master data synchronized with shapes');
+                    
+                    // Update dropdown selector untuk menampilkan perubahan
+                    await loadMasterData();
+                }
+
+                // Update status display
+                updateShapeStatus();
+            } catch (error) {
+                console.error('Error syncing shapes with master data:', error);
+                updateShapeStatus(false);
+            }
+        }
+
+        // Update shape status di Test Panel
+        function updateShapeStatus(synced = true) {
+            const shapeCountEl = document.getElementById('shape-count');
+            const syncStatusEl = document.getElementById('sync-status');
+            
+            if (shapeCountEl) {
+                shapeCountEl.textContent = shapes.length;
+            }
+            
+            if (syncStatusEl) {
+                if (synced) {
+                    syncStatusEl.innerHTML = '✓';
+                    syncStatusEl.className = 'font-semibold text-green-600';
+                } else {
+                    syncStatusEl.innerHTML = '✗';
+                    syncStatusEl.className = 'font-semibold text-red-600';
+                }
+            }
+        }
+        
+        async function loadShapes() {
+            try {
+                displayConfig = await ipcRenderer.invoke('get-display-config');
+                if (displayConfig) {
+                    shapes = displayConfig.shapes || [];
+                    floorplanImg = displayConfig.floorplanImg || '';
+                    
+                    // Pastikan shapes memiliki properti yang diperlukan
+                    shapes.forEach(shape => {
+                        if (!shape.color) {
+                            shape.color = getShapeColor(shape.type || 'NC');
+                        }
+                        if (!shape.type) {
+                            shape.type = 'NC'; // Default type
+                        }
+                        // Pastikan shape memiliki ukuran untuk sistem persegi
+                        if (!shape.width) {
+                            shape.width = 90; // Default width yang lebih besar
+                        }
+                        if (!shape.height) {
+                            shape.height = 70; // Default height yang proporsional
+                        }
+                        shape.blinking = false; // Reset blinking state saat load
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading display config:', error);
+                shapes = [];
+                floorplanImg = '';
+            }
+        }
+
+        // Serial data: blink shape dengan sistem yang lebih canggih
+        ipcRenderer.on('serial-data', (event, code) => {
+            console.log('📡 [DISPLAY] Received serial data:', code);
+            
+            // Process call menggunakan fungsi yang sudah ada (ini sudah handle semua kode)
+            processCall(code);
+            
+            // Handle kode reset untuk shape blinking (tidak duplikasi dengan processCall)
+            if (code.startsWith('90')) {
+                const targetCode = '10' + code.substring(2);
+                console.log('Reset signal for shape blinking:', targetCode);
+                
+                // Stop blinking untuk shape yang sesuai
+                shapes.forEach(s => {
+                    if (s.code === targetCode) {
+                        s.blinking = false;
+                        console.log('Stopped blinking for shape:', s.code, s.type);
+                    }
+                });
+                
+                // Remove dari tracking blinking shapes
+                if (blinkingShapes.has(targetCode)) {
+                    blinkingShapes.delete(targetCode);
+                }
+                
+                // Stop persistent sounds di main process
+                console.log('Requesting stop persistent sound for code:', targetCode);
+                ipcRenderer.invoke('stop-persistent-sounds', { code: targetCode }).then(result => {
+                    if (result.success) {
+                        console.log('Persistent sound stopped for code:', targetCode);
+                    } else {
+                        console.error('Failed to stop persistent sound:', result.error);
+                    }
+                });
+                
+                // Remove dari persistent blinking
+                if (persistentBlinking.has(targetCode)) {
+                    persistentBlinking.delete(targetCode);
+                    console.log('Removed from persistent blinking:', targetCode);
+                }
+                
+                // Update ke main process
+                updatePersistentStateToMain();
+                
+                // Render ulang untuk menampilkan perubahan
+                renderShapes();
+                return;
+            }
+            
+            // Handle kode panggilan untuk shape blinking (tidak duplikasi dengan processCall)
+            if (code.startsWith('10')) {
+                shapes.forEach(s => {
+                    if (s.code === code) {
+                        console.log('Starting blink for shape:', s.code, s.type);
+                        s.blinking = true;
+                        
+                        // Clear interval lama jika ada
+                        if (blinkingShapes.has(code)) {
+                            clearInterval(blinkingShapes.get(code));
+                            blinkingShapes.delete(code);
+                        }
+                        
+                        // Tandai bahwa shape ini sedang blinking
+                        blinkingShapes.set(code, true);
+                        
+                        // Simpan ke persistent blinking
+                        persistentBlinking.set(code, true);
+                        console.log('Added to persistent blinking:', code);
+                        
+                        // Update ke main process
+                        updatePersistentStateToMain();
+                        
+                        // Start render loop untuk animasi yang smooth
+                        if (!animationFrameId) {
+                            renderShapes();
+                        }
+                    }
+                });
+            }
+        });
+
+        // Listen for serial status changes
+        ipcRenderer.on('serial-status', (event, status) => {
+            isConnected = (status === 'connected');
+            masterIsConnected = isConnected;
+            updateStandbyIndicator();
+            updateConnectionStatus();
+            
+            if (status === 'connected') {
+                showNotification('success', 'Serial port terhubung');
+            } else {
+                showNotification('warning', 'Serial port terputus');
+            }
+        });
+
+        // Listen for serial errors
+        ipcRenderer.on('serial-error', (event, message) => {
+            console.error('Serial port error:', message);
+            showNotification('error', `Serial error: ${message}`);
+            
+            isConnected = false;
+            masterIsConnected = false;
+            updateStandbyIndicator();
+            updateConnectionStatus();
+        });
+
+        // Global audio element reference
+        let globalAudioElement = null;
+        let audioElementInitialized = false;
+
+        // Function to ensure global audio element exists
+        function ensureGlobalAudioElement() {
+            if (!globalAudioElement || globalAudioElement.parentNode === null) {
+                // Remove any existing audio element dengan ID yang sama
+                const existingAudio = document.getElementById('persistent-audio');
+                if (existingAudio) {
+                    existingAudio.remove();
+                }
+                
+                globalAudioElement = document.createElement('audio');
+                globalAudioElement.id = 'persistent-audio';
+                globalAudioElement.preload = 'auto';
+                globalAudioElement.style.display = 'none'; // Hidden
+                document.body.appendChild(globalAudioElement);
+                console.log('Created global persistent audio element in display_config.html');
+                
+                // Set up permanent event listeners
+                globalAudioElement.addEventListener('ended', function() {
+                    const code = this.dataset.currentCode;
+                    const currentIndex = parseInt(this.dataset.currentIndex);
+                    console.log('Global audio ended:', code, currentIndex);
+                    if (code && !isNaN(currentIndex)) {
+                        ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
+                    }
+                });
+                
+                globalAudioElement.addEventListener('error', function(error) {
+                    const code = this.dataset.currentCode;
+                    const currentIndex = parseInt(this.dataset.currentIndex);
+                    console.error('Global audio error:', error);
+                    if (code && !isNaN(currentIndex)) {
+                        ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
+                    }
+                });
+                
+                globalAudioElement.addEventListener('loadstart', function() {
+                    console.log('Audio loading started in display_config.html');
+                });
+                
+                globalAudioElement.addEventListener('canplay', function() {
+                    console.log('Audio can play in display_config.html');
+                });
+                
+                // Notify main process that audio element is ready - only once
+                if (!audioElementInitialized) {
+                    audioElementInitialized = true;
+                    console.log('Notifying main process that audio element is ready in display_config.html');
+                    ipcRenderer.invoke('audio-element-ready');
+                }
+            }
+            return globalAudioElement;
+        }
+
+        // Listen for persistent audio playback commands
+        ipcRenderer.on('play-persistent-audio', (event, { code, soundFile, currentIndex, totalSounds }) => {
+            console.log('Received persistent audio command in display_config.html:', { code, soundFile, currentIndex, totalSounds });
+            
+            // Ensure global audio element exists
+            const audioElement = ensureGlobalAudioElement();
+            
+            // Stop current audio if playing different sound
+            if (audioElement.src && !audioElement.src.includes(soundFile)) {
+                audioElement.pause();
+                audioElement.currentTime = 0;
+            }
+            
+            // Store metadata
+            audioElement.dataset.currentCode = code;
+            audioElement.dataset.currentIndex = currentIndex.toString();
+            
+            // Set the audio source
+            const newSrc = `sounds/${soundFile}`;
+            if (audioElement.src !== newSrc) {
+                audioElement.src = newSrc;
+                console.log('Set global audio source to:', audioElement.src);
+            }
+            
+            // Play audio immediately if can play through
+            const playAudio = () => {
+                audioElement.play().then(() => {
+                    console.log('Global audio started successfully in display_config.html');
+                }).catch(error => {
+                    console.error('Failed to play global audio in display_config.html:', error);
+                    ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
+                });
+            };
+            
+            if (audioElement.readyState >= 4) { // HAVE_ENOUGH_DATA
+                playAudio();
+            } else {
+                audioElement.addEventListener('canplaythrough', playAudio, { once: true });
+                audioElement.addEventListener('loadeddata', () => {
+                    console.log('Audio data loaded in display_config.html');
+                }, { once: true });
+            }
+        });
+
+        // Listen for stop persistent audio commands
+        ipcRenderer.on('stop-persistent-audio', () => {
+            console.log('Received stop persistent audio command in display.html');
+            if (globalAudioElement) {
+                globalAudioElement.pause();
+                globalAudioElement.currentTime = 0;
+                globalAudioElement.dataset.currentCode = '';
+                globalAudioElement.dataset.currentIndex = '';
+                console.log('Stopped global persistent audio in display.html');
+            }
+        });
+
+        // Listener untuk menerima update call history dari main process (dari index.html)
+        ipcRenderer.on('call-history-updated', (event, data) => {
+            console.log('Received call history update from main process in display.html:', data);
+            
+            if (data.callHistory) {
+                callHistory = data.callHistory;
+            }
+            
+            if (data.activeAlerts) {
+                activeAlerts = data.activeAlerts;
+            }
+            
+            // Restore persistent sounds dan blinking
+            if (data.persistentSounds) {
+                persistentSounds = new Map(data.persistentSounds);
+                console.log('Restored persistent sounds:', persistentSounds.size, 'sounds');
+                
+                // Resume sounds yang masih aktif
+                persistentSounds.forEach((soundData, code) => {
+                    if (soundData.isPlaying) {
+                        console.log('Resuming sound for code:', code);
+                        playSoundsInSequence(soundData.sounds, code);
+                    }
+                });
+            }
+            
+            if (data.persistentBlinking) {
+                persistentBlinking = new Map(data.persistentBlinking);
+                console.log('Restored persistent blinking:', persistentBlinking.size, 'shapes');
+                
+                // Resume blinking yang masih aktif
+                persistentBlinking.forEach((isActive, code) => {
+                    if (isActive) {
+                        const shape = shapes.find(s => s.code === code);
+                        if (shape) {
+                            shape.blinking = true;
+                            blinkingShapes.set(code, true);
+                            console.log('Resumed blinking for shape:', code);
+                        }
+                    }
+                });
+                
+                // Start render loop jika ada blinking
+                if (persistentBlinking.size > 0 && !animationFrameId) {
+                    renderShapes();
+                }
+            }
+            
+            console.log('Call history updated from external source in display.html:', callHistory.length, 'entries');
+        });
+
+        // Update standby indicator
+        function updateStandbyIndicator() {
+            const indicator = document.getElementById('standby-indicator');
+            if (!indicator) return;
+
+            indicator.classList.remove('bg-red-500', 'bg-green-500', 'bg-yellow-500', 'bg-gray-500');
+            
+            if (standbyMode) {
+                indicator.classList.add('bg-yellow-500');
+            } else if (isConnected || masterIsConnected) {
+                indicator.classList.add('bg-gray-500');
+            } else {
+                indicator.classList.add('bg-red-500');
+            }
+        }
+
+        // Process serial call codes
+        async function processCall(code) {
+            console.log('Processing call with code:', code);
+            
+            // Khusus untuk kode standby
+            if (code === '99' || code === '99:') {
+                const wasInStandby = standbyMode;
+                standbyMode = true;
+                setStandbyIndicator('green');
+                setTimeout(() => {
+                    setStandbyIndicator('yellow');
+                }, 500);
+                
+                // Hanya tampilkan notifikasi jika belum dalam mode standby atau sudah 5 detik dari notifikasi terakhir
+                const now = Date.now();
+                if (!wasInStandby || !lastStandbyNotification || (now - lastStandbyNotification) > 5000) {
+                    showNotification('warning', 'Mode Standby Aktif');
+                    lastStandbyNotification = now;
+                }
+                return;
+            }
+
+            // Khusus untuk kode 100 (keluar dari standby)
+            if (code === '100') {
+                const wasInStandby = standbyMode;
+                standbyMode = false;
+                updateConnectionStatus();
+                
+                // Hanya tampilkan notifikasi jika sebelumnya dalam standby
+                if (wasInStandby) {
+                    showNotification('info', 'Sistem keluar dari mode standby');
+                }
+                lastStandbyNotification = null; // Reset notifikasi standby
+                return;
+            }
+            
+            // Untuk kode reset (90x atau 90xx)
+            if (code.startsWith('90')) {
+                const bedNumber = code.substring(2);
+                const originalCode = `10${bedNumber}`;
+                
+                console.log('🔄 [DISPLAY] Reset code detected:', code, '→ Original code:', originalCode);
+                console.log('🔍 [DISPLAY] Current active alerts before reset:', activeAlerts.length);
+                
+                // Cari data di master data untuk validasi dan play reset sound
+                const data = masterData.find(d => d.charCode === originalCode);
+                if (!isValidMasterData(data)) {
+                    console.log('Original code not found or incomplete in master data:', originalCode);
+                    showNotification('warning', `Kode ${originalCode} tidak ditemukan atau data tidak lengkap`);
+                    return;
+                }
+                
+                // Update call history untuk reset
+                const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode);
+                if (alertIndex !== -1) {
+                    const now = new Date();
+                    const resetTimeStr = formatDateTime(now);
+                    
+                    // Update call history
+                    const historyIndex = callHistory.findIndex(call => call.code === originalCode && call.status === 'active');
+                    if (historyIndex !== -1) {
+                        callHistory[historyIndex].status = 'completed';
+                        callHistory[historyIndex].resetTime = now;
+                        callHistory[historyIndex].resetTimeStr = resetTimeStr;
+                    }
+                    
+                    // Update active alert dan simpan reference untuk notifikasi
+                    const alertDisplayText = activeAlerts[alertIndex].display;
+                    activeAlerts[alertIndex].status = 'completed';
+                    activeAlerts[alertIndex].resetTime = now;
+                    activeAlerts[alertIndex].resetTimeStr = resetTimeStr;
+                    
+                    // SEGERA kirim update ke main process untuk sinkronisasi real-time
+                    await updateCallHistoryToMain();
+                    
+                    // Tampilkan notifikasi OS untuk reset
+                    showOSNotification(
+                        'Nurse Call - Reset',
+                        `${alertDisplayText} telah ditangani`,
+                        'normal'
+                    );
+                    
+                    // Hapus dari active alerts setelah delay yang lebih pendek
+                    setTimeout(async () => {
+                        const idx = activeAlerts.findIndex(a => a.id === activeAlerts[alertIndex].id);
+                        if (idx !== -1) {
+                            activeAlerts.splice(idx, 1);
+                            // Update main process lagi setelah hapus dari active alerts
+                            await updateCallHistoryToMain();
+                        }
+                    }, 3000); // Reduced from 30000 to 3000 for faster UI update
+                    
+                    console.log(`🔄 [DISPLAY] Reset alert ${originalCode} marked as completed and will be removed in 3 seconds`);
+                    console.log(`📊 [DISPLAY] Broadcasting update - Active alerts: ${activeAlerts.length}, Call history: ${callHistory.length}`);
+                }
+                
+                const displayText = `${data.roomName} - ${data.bedName}`;
+                showNotification('success', `Reset: ${displayText}`);
+                
+                // RESET TIDAK MEMAINKAN SUARA APA-APA
+                console.log(`Reset processed for ${originalCode} - No sound should be played`);
+                return;
+            }
+            
+            // Untuk kode panggilan normal (10x atau 10xx)
+            if (code.startsWith('10')) {
+                console.log('Processing call code:', code);
+                
+                // Cek apakah kode ada di master data dan memiliki data lengkap
+                const data = masterData.find(d => d.charCode === code);
+                if (!isValidMasterData(data)) {
+                    console.log('Call code not found or incomplete in master data:', code);
+                    showNotification('warning', `Kode ${code} tidak ditemukan atau data tidak lengkap`);
+                    return;
+                }
+                
+                // Kedip biru sekali
+                setStandbyIndicator('blue');
+                setTimeout(() => {
+                    if (standbyMode) {
+                        setStandbyIndicator('yellow');
+                    } else {
+                        updateConnectionStatus();
+                    }
+                }, 500);
+
+                // Proses panggilan dan catat ke call history
+                const now = new Date();
+                const timeStr = formatDateTime(now);
+                const displayText = `${data.roomName} - ${data.bedName}`;
+                
+                // Buat entry call history baru
+                const callEntry = {
+                    id: Date.now(),
+                    code: code,
+                    room: data.roomName,
+                    bed: data.bedName,
+                    display: displayText,
+                    time: timeStr,
+                    timestamp: now,
+                    status: 'active',
+                    resetTime: null,
+                    resetTimeStr: ''
+                };
+                
+                // Tambah ke call history dan active alerts
+                callHistory.unshift(callEntry);
+                activeAlerts.push({...callEntry});
+                
+                // Kirim update call history ke main process untuk dibagikan dengan index.html
+                updateCallHistoryToMain();
+                
+                // Tampilkan notifikasi
+                showNotification('info', `Panggilan: ${displayText}`);
+                
+                // Tampilkan notifikasi OS untuk alert baru - HANYA SEKALI DI SINI
+                showOSNotification(
+                    'Nurse Call',
+                    `${displayText} membutuhkan bantuan`,
+                    'critical'
+                );
+                
+                // Play sounds dan simpan ke persistent
+                const sounds = [];
+                if (data.v1) sounds.push(data.v1);
+                if (data.v2) sounds.push(data.v2);
+                if (data.v3) sounds.push(data.v3);
+                if (data.v4) sounds.push(data.v4);
+                if (data.v5) sounds.push(data.v5);
+                if (data.v6) sounds.push(data.v6);
+                
+                if (sounds.length > 0) {
+                    // Gunakan global audio player di main process
+                    console.log('Requesting persistent sound playback for code:', code);
+                    ipcRenderer.invoke('play-persistent-sounds', { code, sounds }).then(result => {
+                        if (result.success) {
+                            console.log('Persistent sound playback started for code:', code);
+                        } else {
+                            console.error('Failed to start persistent sound playback:', result.error);
+                        }
+                    });
+                }
+            }
+        }
+
+        // Play sounds in sequence
+        function playSoundsInSequence(sounds, code = null) {
+            let currentIndex = 0;
+            
+            function playNext() {
+                // Cek apakah sound masih aktif di persistent (untuk avoid cancel)
+                if (code && !persistentSounds.has(code)) {
+                    console.log('Sound sequence cancelled for code:', code);
+                    return;
+                }
+                
+                if (currentIndex < sounds.length) {
+                    const sound = new Audio();
+                    const soundPath = `sounds/${sounds[currentIndex]}`;
+                    sound.src = soundPath;
+                    
+                    sound.oncanplaythrough = () => {
+                        // Double check sebelum play
+                        if (code && !persistentSounds.has(code)) {
+                            console.log('Sound cancelled before play for code:', code);
+                            return;
+                        }
+                        
+                        sound.play().then(() => {
+                            console.log('Sound started playing successfully:', soundPath);
+                        }).catch(e => {
+                            console.error('Error playing sound:', e, soundPath);
+                            currentIndex++;
+                            playNext();
+                        });
+                    };
+                    
+                    sound.onended = () => {
+                        console.log('Sound finished playing:', soundPath);
+                        currentIndex++;
+                        playNext();
+                    };
+                    
+                    sound.onerror = (e) => {
+                        console.error('Error loading sound:', e, soundPath);
+                        currentIndex++;
+                        playNext();
+                    };
+                } else {
+                    console.log('Finished playing all sounds for code:', code);
+                    // Mark sound as finished but keep it persistent until reset
+                    if (code && persistentSounds.has(code)) {
+                        const soundData = persistentSounds.get(code);
+                        soundData.isPlaying = false;
+                        persistentSounds.set(code, soundData);
+                        updatePersistentStateToMain();
+                    }
+                }
+            }
+            
+            if (sounds.length > 0) {
+                playNext();
+            } else {
+                console.log('No sounds to play');
+            }
+        }
+
+        // Set standby indicator color
+        function setStandbyIndicator(color) {
+            const standbyIndicator = document.getElementById('standby-indicator');
+            if (!standbyIndicator) return;
+            
+            standbyIndicator.classList.remove('bg-red-500', 'bg-green-500', 'bg-yellow-500', 'bg-gray-500', 'bg-blue-500');
+            
+            if (color === 'red') {
+                standbyIndicator.classList.add('bg-red-500');
+            } else if (color === 'green') {
+                standbyIndicator.classList.add('bg-green-500');
+            } else if (color === 'yellow') {
+                standbyIndicator.classList.add('bg-yellow-500');
+            } else if (color === 'gray') {
+                standbyIndicator.classList.add('bg-gray-500');
+            } else if (color === 'blue') {
+                standbyIndicator.classList.add('bg-blue-500');
+            }
+        }
+
+        // Update connection status
+        function updateConnectionStatus() {
+            if (standbyMode) {
+                setStandbyIndicator('yellow');
+            } else if (masterIsConnected || isConnected) {
+                setStandbyIndicator('gray');
+            } else {
+                setStandbyIndicator('red');
+            }
+        }
+
+        // OS Notification
+        async function showOSNotification(title, body, urgency = 'normal') {
+            try {
+                await ipcRenderer.invoke('show-system-notification', { title, body, urgency });
+            } catch (error) {
+                console.error('Error showing system notification:', error);
+            }
+        }
+
+        // Check if master data is valid
+        function isValidMasterData(data) {
+            if (!data) return false;
+            
+            // Cek apakah data memiliki nilai yang dibutuhkan
+            if (!data.roomName || data.roomName.trim() === '') return false;
+            if (!data.bedName || data.bedName.trim() === '') return false;
+            
+            // Cek minimal satu file suara harus ada
+            const hasSound = [data.v1, data.v2, data.v3, data.v4, data.v5, data.v6].some(v => v && v.trim() !== '');
+            if (!hasSound) return false;
+            
+            return true;
+        }
+
+        // Play sound untuk shape
+        function playShapeSound(shape, action) {
+            try {
+                // Cari sound file dari master data
+                const masterDataItem = masterData.find(d => d.charCode === shape.code);
+                if (masterDataItem) {
+                    let sounds = [];
+                    
+                    if (action === 'call') {
+                        // Untuk panggilan, mainkan v1, v2, v3 yang ada
+                        if (masterDataItem.v1) sounds.push(masterDataItem.v1);
+                        if (masterDataItem.v2) sounds.push(masterDataItem.v2);
+                        if (masterDataItem.v3) sounds.push(masterDataItem.v3);
+                    } else if (action === 'reset') {
+                        // RESET TIDAK MEMAINKAN SUARA APA-APA
+                        console.log(`Reset action for ${shape.code} - No sound should be played`);
+                        return;
+                    }
+                    
+                    if (sounds.length > 0) {
+                        console.log(`Playing ${action} sounds for ${shape.code}:`, sounds);
+                        playSoundsInSequence(sounds);
+                    } else {
+                        console.log(`No ${action} sounds found for ${shape.code}`);
+                    }
+                }
+            } catch (error) {
+                console.error('Error playing shape sound:', error);
+            }
+        }
+
+        // Window resize handler dengan debouncing dan scale adjustment
+        let resizeTimeout;
+        let lastCanvasSize = { width: 0, height: 0 };
+        
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                updateCanvasSize();
+            }, 50); // Lebih responsif
+        });
+        
+        // Handle orientation change untuk mobile
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                console.log('Orientation changed, updating canvas');
+                updateCanvasSize();
+            }, 100);
+        });
+        
+        function updateCanvasSize() {
+            const img = document.getElementById('floorplan-img');
+            const canvas = document.getElementById('shape-canvas');
+            const container = document.getElementById('floorplan-container');
+            
+            if (!img || !canvas || !container) return;
+            
+            const imgRect = img.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            
+            const imgOffsetX = imgRect.left - containerRect.left;
+            const imgOffsetY = imgRect.top - containerRect.top;
+            
+            const newWidth = imgRect.width || img.offsetWidth || 800;
+            const newHeight = imgRect.height || img.offsetHeight || 600;
+            
+            // Hitung scale factor untuk menyesuaikan posisi shapes
+            const scaleX = newWidth / (lastCanvasSize.width || newWidth);
+            const scaleY = newHeight / (lastCanvasSize.height || newHeight);
+            
+            console.log('Resize scale factors:', { scaleX, scaleY, oldSize: lastCanvasSize, newSize: { width: newWidth, height: newHeight } });
+            
+            // Update posisi shapes berdasarkan scale factor (hanya jika ada perubahan signifikan)
+            if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
+                shapes.forEach(shape => {
+                    // Update posisi dengan proporsi yang tepat
+                    shape.x = Math.round(shape.x * scaleX);
+                    shape.y = Math.round(shape.y * scaleY);
+                    
+                    // Update ukuran dengan proporsi yang tepat, minimum size 20px
+                    shape.width = Math.max(20, Math.round(shape.width * scaleX));
+                    shape.height = Math.max(20, Math.round(shape.height * scaleY));
+                    
+                    // Pastikan shape tidak keluar dari canvas
+                    shape.x = Math.max(shape.width/2, Math.min(newWidth - shape.width/2, shape.x));
+                    shape.y = Math.max(shape.height/2, Math.min(newHeight - shape.height/2, shape.y));
+                });
+                
+                console.log('Shapes resized and repositioned with scale factors:', { scaleX, scaleY });
+                
+                // Save perubahan posisi (debounced)
+                clearTimeout(window.saveShapesTimeout);
+                window.saveShapesTimeout = setTimeout(() => {
+                    saveShapes();
+                }, 500);
+            }
+            
+            // Update canvas size dan position
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+            canvas.style.width = newWidth + 'px';
+            canvas.style.height = newHeight + 'px';
+            canvas.style.position = 'absolute';
+            canvas.style.top = imgOffsetY + 'px';
+            canvas.style.left = imgOffsetX + 'px';
+            canvas.style.pointerEvents = 'auto';
+            
+            // Simpan ukuran baru untuk resize berikutnya
+            lastCanvasSize = { width: newWidth, height: newHeight };
+            
+            // Render ulang shapes
+            renderShapes();
+        }
+
+        // Cleanup saat window ditutup
+        window.addEventListener('beforeunload', () => {
+            // Clear animation frame
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            
+            // Cleanup resize observer
+            if (resizeObserver) {
+                resizeObserver.disconnect();
+                resizeObserver = null;
+            }
+            
+            // Clear semua blinking tracking
+            blinkingShapes.clear();
+            
+            // Reset semua shapes blinking state
+            shapes.forEach(shape => {
+                shape.blinking = false;
+            });
+        });
+
+        // Load sound files
+        async function loadSoundFiles() {
+            try {
+                // Use IPC to get sound files from main process instead of direct file access
+                const config = await ipcRenderer.invoke('load-config');
+                if (config.masterData) {
+                    // Extract unique sound files from master data
+                    const soundSet = new Set();
+                    config.masterData.forEach(item => {
+                        [item.v1, item.v2, item.v3, item.v4, item.v5, item.v6].forEach(sound => {
+                            if (sound && sound.trim() !== '') {
+                                soundSet.add(sound);
+                            }
+                        });
+                    });
+                    soundFiles = Array.from(soundSet);
+                } else {
+                    soundFiles = [];
+                }
+                console.log('Loaded sound files from master data:', soundFiles);
+            } catch (error) {
+                console.error('Error loading sound files:', error);
+                soundFiles = [];
+            }
+        }
+
+        // Update sounds indicator
+        function updateSoundsIndicator() {
+            const indicator = document.getElementById('sounds-indicator');
+            if (!indicator) return;
+            
+            if (soundFiles && soundFiles.length > 0) {
+                indicator.classList.remove('bg-red-500');
+                indicator.classList.add('bg-green-500');
+            } else {
+                indicator.classList.remove('bg-green-500');
+                indicator.classList.add('bg-red-500');
+            }
+        }
+
+
+
+        // Fungsi untuk validasi char code
+        function isValidCharCode(code) {
+            if (!/^(10|90)\d{1,2}$/.test(code)) {
+                return false;
+            }
+
+            const prefix = code.substring(0, 2);
+            const number = parseInt(code.substring(2));
+
+            // Validasi range: 10x (1-90) untuk panggilan, 90x (1-90) untuk reset
+            if (prefix === '10' && (number < 1 || number > 90)) {
+                showNotification('warning', 'Kode panggilan valid: 101-1090', 5000);
+                return false;
+            }
+            
+            if (prefix === '90' && (number < 1 || number > 90)) {
+                showNotification('warning', 'Kode reset valid: 901-9090', 5000);
+                return false;
+            }
+
+            return true;
+        }
+
+        // Observer untuk memantau perubahan ukuran gambar
+        let resizeObserver;
+        
+        function setupResizeObserver() {
+            if (window.ResizeObserver) {
+                const img = document.getElementById('floorplan-img');
+                if (img && !resizeObserver) {
+                    resizeObserver = new ResizeObserver(entries => {
+                        for (let entry of entries) {
+                            console.log('Image resized via ResizeObserver');
+                            clearTimeout(resizeTimeout);
+                            resizeTimeout = setTimeout(updateCanvasSize, 50);
+                        }
+                    });
+                    resizeObserver.observe(img);
+                    console.log('ResizeObserver setup for image');
+                }
+            } else {
+                // Fallback untuk browser lama: polling check
+                console.log('ResizeObserver not supported, using polling fallback');
+                let lastImageSize = { width: 0, height: 0 };
+                
+                setInterval(() => {
+                    const img = document.getElementById('floorplan-img');
+                    if (img) {
+                        const currentWidth = img.offsetWidth;
+                        const currentHeight = img.offsetHeight;
+                        
+                        if (currentWidth !== lastImageSize.width || currentHeight !== lastImageSize.height) {
+                            console.log('Image size changed via polling');
+                            lastImageSize = { width: currentWidth, height: currentHeight };
+                            clearTimeout(resizeTimeout);
+                            resizeTimeout = setTimeout(updateCanvasSize, 50);
+                        }
+                    }
+                }, 500); // Check setiap 500ms
+            }
+        }
+        
+        // Init - tunggu DOM ready
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await loadMasterData();
+                await loadShapes();
+                await loadSoundFiles();
+                await loadCallHistoryFromMain(); // Load call history dari main process
+                await loadPersistentCallHistoryAtStartup(); // Load persistent call history
+                await checkInitialConnectionStatus();
+                await checkAudioStatus(); // Check if audio is currently playing
+                
+                // Initialize global audio element
+                ensureGlobalAudioElement();
+                
+                // Request restoration of any playing audio after navigation
+                const restorationResult = await ipcRenderer.invoke('restore-audio-after-navigation');
+                if (restorationResult.restored) {
+                    console.log('Audio restoration completed:', restorationResult.status);
+                }
+                
+                renderFloorplan();
+                updateStandbyIndicator();
+                updateSoundsIndicator();
+                updateConnectionStatus();
+                
+                // Setup resize observer
+                setupResizeObserver();
+                
+                // Canvas interactions will be enabled during renderShapes
+                console.log('Canvas interactions will be enabled during renderShapes');
+
+                // Setup test panel event listeners
+                setupTestPanelEventListeners();
+                
+                // Setup notification settings event listeners
+                setupNotificationSettingsEventListeners();
+                
+                // Load notification settings
+                await loadNotificationSettings();
+                
+                // Update shape status
+                updateShapeStatus();
+                
+                // Setup floating buttons event listeners
+                setupFloatingButtonsEventListeners();
+                
+                console.log('Display.html initialized successfully');
+                showNotification('success', 'Display berhasil diinisialisasi');
+            } catch (error) {
+                console.error('Error initializing display:', error);
+                showNotification('error', 'Error saat inisialisasi display');
+            }
+        });
+
+        // Check initial connection status
+        async function checkInitialConnectionStatus() {
+            try {
+                const isAlreadyConnected = await ipcRenderer.invoke('is-serial-connected');
+                if (isAlreadyConnected) {
+                    isConnected = true;
+                    masterIsConnected = true;
+                    
+                    // Load master settings untuk mendapatkan port yang sedang digunakan
+                    const config = await ipcRenderer.invoke('load-config');
+                    if (config.masterSettings && config.masterSettings.com) {
+                        masterSelectedPort = config.masterSettings.com;
+                        showNotification('info', `Serial terhubung ke ${masterSelectedPort}`);
+                    } else {
+                        showNotification('info', 'Serial sudah terhubung');
+                    }
+                } else {
+                    showNotification('warning', 'Serial tidak terhubung');
+                }
+            } catch (error) {
+                console.error('Error checking connection status:', error);
+            }
+        }
+
+        // Format date time
+        function formatDateTime(date) {
+            const timeStr = date.toLocaleTimeString('en-US', { hour12: false });
+            return `${timeStr}.${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
+        }
+
+        // Check current audio status
+        async function checkAudioStatus() {
+            try {
+                const status = await ipcRenderer.invoke('get-current-audio-status');
+                if (status.isPlaying && status.currentSequence) {
+                    console.log('Audio is currently playing, continuing with current sequence');
+                    // Audio sudah playing di main process, tidak perlu melakukan apa-apa
+                    // Audio element akan otomatis menerima command berikutnya
+                }
+            } catch (error) {
+                console.error('Error checking audio status:', error);
+            }
+        }
+
+        // Add debug message function for testing
+        function addDebugMessage(message, type = 'info') {
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        // Setup floating buttons event listeners
+        function setupFloatingButtonsEventListeners() {
+            // FAB Add Shape
+            const fabAddShape = document.getElementById('fab-add-shape');
+            if (fabAddShape) {
+                fabAddShape.addEventListener('click', () => {
+                    const modal = document.getElementById('shape-selection-modal');
+                    modal.classList.remove('hidden');
+                });
+            }
+
+            // FAB Delete Shape - menggunakan fungsi yang sudah ada
+            const fabDeleteShape = document.getElementById('fab-delete-shape');
+            if (fabDeleteShape) {
+                fabDeleteShape.addEventListener('click', async () => {
+                    if (!selectedShapeId) {
+                        showNotification('warning', 'Silakan klik shape yang ingin dihapus terlebih dahulu');
+                        return;
+                    }
+                    
+                    if (confirm(`Hapus shape dengan kode ${selectedShapeId}?`)) {
+                        // Clear blinking interval jika ada
+                        if (blinkingShapes.has(selectedShapeId)) {
+                            clearInterval(blinkingShapes.get(selectedShapeId));
+                            blinkingShapes.delete(selectedShapeId);
+                        }
+                        
+                        // Hapus dari array shapes
+                        const shapeToDelete = selectedShapeId;
+                        shapes = shapes.filter(s => s.code !== selectedShapeId);
+                        
+                        // Update selector untuk menghilangkan info shape
+                        await loadMasterData();
+                        
+                        selectedShapeId = null;
+                        saveShapes(); // Ini akan trigger syncShapeWithMasterData
+                        renderShapes();
+                        
+                        showNotification('success', `Shape ${shapeToDelete} berhasil dihapus`);
+                    }
+                });
+            }
+
+            // FAB Test Panel
+            const fabTestPanel = document.getElementById('fab-test-panel');
+            if (fabTestPanel) {
+                fabTestPanel.addEventListener('click', () => {
+                    const modal = document.getElementById('test-panel-modal');
+                    modal.classList.remove('hidden');
+                });
+            }
+
+            // Shape Selection Modal event listeners
+            const closeShapeSelection = document.getElementById('close-shape-selection');
+            if (closeShapeSelection) {
+                closeShapeSelection.addEventListener('click', () => {
+                    document.getElementById('shape-selection-modal').classList.add('hidden');
+                });
+            }
+
+            const btnCancelAdd = document.getElementById('btn-cancel-add');
+            if (btnCancelAdd) {
+                btnCancelAdd.addEventListener('click', () => {
+                    document.getElementById('shape-selection-modal').classList.add('hidden');
+                });
+            }
+
+            // Test Panel Modal event listeners
+            const closeTestPanel = document.getElementById('close-test-panel');
+            if (closeTestPanel) {
+                closeTestPanel.addEventListener('click', () => {
+                    document.getElementById('test-panel-modal').classList.add('hidden');
+                });
+            }
+
+            // Close modals when clicking outside
+            const shapeModal = document.getElementById('shape-selection-modal');
+            if (shapeModal) {
+                shapeModal.addEventListener('click', (e) => {
+                    if (e.target === shapeModal) {
+                        shapeModal.classList.add('hidden');
+                    }
+                });
+            }
+
+            const testModal = document.getElementById('test-panel-modal');
+            if (testModal) {
+                testModal.addEventListener('click', (e) => {
+                    if (e.target === testModal) {
+                        testModal.classList.add('hidden');
+                    }
+                });
+            }
+        }
+
+        // Setup test panel event listeners
+        function setupTestPanelEventListeners() {
+
+            // Manual input
+            const manualSubmitBtn = document.getElementById('display-manual-submit');
+            const manualInput = document.getElementById('display-manual-input');
+            
+            if (manualSubmitBtn && manualInput) {
+                manualSubmitBtn.addEventListener('click', function() {
+                    const input = manualInput.value.trim();
+                    if (input) {
+                        if (!isValidCharCode(input)) {
+                            showNotification('warning', 'PIN Maksimal adalah 90', 5000);
+                            manualInput.value = '';
+                            return;
+                        }
+                        console.log('Display manual input:', input);
+                        
+                        // Handle shape blinking untuk kode panggilan
+                        if (input.startsWith('10')) {
+                            const targetShape = shapes.find(s => s.code === input);
+                            if (targetShape) {
+                                targetShape.blinking = true;
+                                blinkingShapes.set(input, true);
+                                if (!animationFrameId) {
+                                    renderShapes();
+                                }
+                                showNotification('info', `Test manual: ${input} - Shape berkedip`);
+                            } else {
+                                showNotification('warning', `Kode ${input} tidak ditemukan di shapes`);
+                            }
+                        } else if (input.startsWith('90')) {
+                            // Handle reset
+                            const targetCode = '10' + input.substring(2);
+                            const targetShape = shapes.find(s => s.code === targetCode);
+                            if (targetShape) {
+                                targetShape.blinking = false;
+                                blinkingShapes.delete(targetCode);
+                                renderShapes();
+                                showNotification('success', `Reset: ${targetCode} - Stop blinking`);
+                            } else {
+                                showNotification('warning', `Kode ${targetCode} tidak ditemukan di shapes`);
+                            }
+                        } else {
+                            showNotification('info', `Test manual: ${input}`);
+                        }
+                        
+                        // Juga jalankan processCall untuk handling suara dll
+                        processCall(input);
+                        manualInput.value = '';
+                    }
+                });
+
+                // Enter key support untuk manual input
+                manualInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        manualSubmitBtn.click();
+                    }
+                });
+            }
+
+
+        }
+
+        // Throttled update mechanism
+        let updateThrottleTimeout = null;
+        
+        // Fungsi untuk mengirim call history ke main process
+        async function updateCallHistoryToMain() {
+            try {
+                // Clear any pending throttled update
+                if (updateThrottleTimeout) {
+                    clearTimeout(updateThrottleTimeout);
+                    updateThrottleTimeout = null;
+                }
+                
+                await ipcRenderer.invoke('update-call-history', { 
+                    callHistory, 
+                    activeAlerts,
+                    persistentSounds: Array.from(persistentSounds.entries()),
+                    persistentBlinking: Array.from(persistentBlinking.entries())
+                });
+                console.log('📤 [DISPLAY] Call history updated to main process');
+                
+                // Force broadcast update to ensure synchronization
+                await ipcRenderer.invoke('force-broadcast-call-history');
+                console.log('📻 [DISPLAY] Forced broadcast completed');
+                
+            } catch (error) {
+                console.error('❌ [DISPLAY] Error updating call history to main process:', error);
+            }
+        }
+        
+        // Throttled version for rapid updates
+        function updateCallHistoryToMainThrottled(delay = 100) {
+            if (updateThrottleTimeout) {
+                clearTimeout(updateThrottleTimeout);
+            }
+            
+            updateThrottleTimeout = setTimeout(() => {
+                updateCallHistoryToMain();
+                updateThrottleTimeout = null;
+            }, delay);
+        }
+
+        // Fungsi khusus untuk update persistent state
+        async function updatePersistentStateToMain() {
+            try {
+                await ipcRenderer.invoke('update-call-history', { 
+                    callHistory, 
+                    activeAlerts,
+                    persistentSounds: Array.from(persistentSounds.entries()),
+                    persistentBlinking: Array.from(persistentBlinking.entries())
+                });
+                console.log('Persistent state updated to main process');
+            } catch (error) {
+                console.error('Error updating persistent state to main process:', error);
+            }
+        }
+
+        // Fungsi untuk memuat call history dari main process
+        async function loadCallHistoryFromMain() {
+            try {
+                const data = await ipcRenderer.invoke('get-call-history');
+                if (data) {
+                    callHistory = data.callHistory || [];
+                    activeAlerts = data.activeAlerts || [];
+                    
+                    // Restore persistent sounds dan blinking
+                    if (data.persistentSounds) {
+                        persistentSounds = new Map(data.persistentSounds);
+                        console.log('Loaded persistent sounds from main process:', persistentSounds.size, 'sounds');
+                        
+                        // Resume sounds yang masih aktif
+                        persistentSounds.forEach((soundData, code) => {
+                            if (soundData.isPlaying) {
+                                console.log('Resuming sound for code:', code);
+                                playSoundsInSequence(soundData.sounds, code);
+                            }
+                        });
+                    }
+                    
+                    if (data.persistentBlinking) {
+                        persistentBlinking = new Map(data.persistentBlinking);
+                        console.log('Loaded persistent blinking from main process:', persistentBlinking.size, 'shapes');
+                        
+                        // Resume blinking yang masih aktif
+                        persistentBlinking.forEach((isActive, code) => {
+                            if (isActive) {
+                                const shape = shapes.find(s => s.code === code);
+                                if (shape) {
+                                    shape.blinking = true;
+                                    blinkingShapes.set(code, true);
+                                    console.log('Resumed blinking for shape:', code);
+                                }
+                            }
+                        });
+                        
+                        // Start render loop jika ada blinking
+                        if (persistentBlinking.size > 0 && !animationFrameId) {
+                            renderShapes();
+                        }
+                    }
+                    
+                    console.log('Call history loaded from main process:', callHistory.length, 'entries');
+                }
+            } catch (error) {
+                console.error('Error loading call history from main process:', error);
+            }
+        }
+
+        // Load persistent call history at startup (same as index.html)
+        async function loadPersistentCallHistoryAtStartup() {
+            try {
+                const persistentHistory = await ipcRenderer.invoke('load-persistent-call-history-at-startup');
+                if (persistentHistory && persistentHistory.length > 0) {
+                    // Merge dengan current call history tapi hanya yang belum ada
+                    persistentHistory.forEach(persistentCall => {
+                        const exists = callHistory.find(call => call.id === persistentCall.id);
+                        if (!exists) {
+                            callHistory.unshift(persistentCall);
+                        }
+                    });
+                    
+                    // Sort by timestamp descending
+                    callHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    
+                    console.log('📂 [DISPLAY] Loaded persistent call history:', persistentHistory.length, 'entries');
+                }
+            } catch (error) {
+                console.error('Error loading persistent call history at startup:', error);
+            }
+        }
+
+        // Setup notification settings event listeners
+        function setupNotificationSettingsEventListeners() {
+            // Floating button
+            const fabNotificationSettings = document.getElementById('fab-notification-settings');
+            if (fabNotificationSettings) {
+                fabNotificationSettings.addEventListener('click', () => {
+                    const modal = document.getElementById('notification-settings-modal');
+                    modal.classList.remove('hidden');
+                    
+                    // Load current settings
+                    document.getElementById('display-notification-format').value = notificationSettings.displayFormat;
+                    document.getElementById('notification-alert-duration').value = notificationSettings.alertDuration;
+                    document.getElementById('notification-sound-alert').checked = notificationSettings.soundEnabled;
+                    
+                    if (notificationSettings.displayFormat === 'custom') {
+                        document.getElementById('custom-notification-format').value = notificationSettings.customFormat;
+                        document.getElementById('custom-notification-format-container').classList.remove('hidden');
+                    }
+                });
+            }
+
+            // Close modal
+            const closeNotificationSettings = document.getElementById('close-notification-settings');
+            if (closeNotificationSettings) {
+                closeNotificationSettings.addEventListener('click', () => {
+                    document.getElementById('notification-settings-modal').classList.add('hidden');
+                });
+            }
+
+            // Display format change
+            const displayFormatSelect = document.getElementById('display-notification-format');
+            if (displayFormatSelect) {
+                displayFormatSelect.addEventListener('change', (e) => {
+                    const customContainer = document.getElementById('custom-notification-format-container');
+                    if (e.target.value === 'custom') {
+                        customContainer.classList.remove('hidden');
+                    } else {
+                        customContainer.classList.add('hidden');
+                    }
+                });
+            }
+
+            // Apply settings
+            const applySettings = document.getElementById('apply-notification-settings');
+            if (applySettings) {
+                applySettings.addEventListener('click', async () => {
+                    const displayFormat = document.getElementById('display-notification-format').value;
+                    const alertDuration = parseInt(document.getElementById('notification-alert-duration').value);
+                    const soundEnabled = document.getElementById('notification-sound-alert').checked;
+                    const customFormat = document.getElementById('custom-notification-format').value;
+
+                    notificationSettings = {
+                        displayFormat,
+                        alertDuration,
+                        soundEnabled,
+                        customFormat
+                    };
+
+                    const success = await saveNotificationSettings();
+                    if (success) {
+                        showNotification('success', 'Notification settings saved successfully!');
+                        document.getElementById('notification-settings-modal').classList.add('hidden');
+                    } else {
+                        showNotification('error', 'Failed to save notification settings');
+                    }
+                });
+            }
+
+            // Close modal when clicking outside
+            const modal = document.getElementById('notification-settings-modal');
+            if (modal) {
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.classList.add('hidden');
+                    }
+                });
+            }
+        }
+
+        // Load notification settings
+        async function loadNotificationSettings() {
+            try {
+                const data = await ipcRenderer.invoke('load-config');
+                if (data.notificationSettings) {
+                    notificationSettings = data.notificationSettings;
+                }
+            } catch (error) {
+                console.error('Error loading notification settings:', error);
+            }
+        }
+
+        // Save notification settings
+        async function saveNotificationSettings() {
+            try {
+                const data = await ipcRenderer.invoke('load-config');
+                const result = await ipcRenderer.invoke('save-config', {
+                    ...data,
+                    notificationSettings: notificationSettings
+                });
+                return result;
+            } catch (error) {
+                console.error('Error saving notification settings:', error);
+                return false;
+            }
+        }
+
+        // Test functions untuk debugging (opsional)
+        window.testSerial = {
+            test99: () => processCall('99'),
+            test100: () => processCall('100'),
+            test101: () => processCall('101'),
+            test901: () => processCall('901'),
+            testCustom: (code) => processCall(code.toString())
+        };
+
+        console.log('Display functions loaded. Use window.testSerial for testing.');
+    </script>
+</body>
+</html> 

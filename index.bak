@@ -1,0 +1,1506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nurse Call System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .alert-pulse {
+            animation: pulse 2s infinite;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        @keyframes fab-bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-12px); }
+        }
+        .animate-fab-bounce {
+            animation: fab-bounce 2.5s infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto px-4 py-8">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-blue-800">Nurse Call System</h1>
+                <p class="text-gray-600">Monitor patient calls in real-time</p>
+            </div>
+            <div class="flex items-center space-x-4">
+                <!-- Card Indicator Standby -->
+                <div id="standby-indicator-card" class="bg-white p-3 rounded-lg shadow flex items-center">
+                    <span id="standby-indicator" class="inline-block w-3 h-3 rounded-full bg-red-500 mr-2"></span>
+                    <span class="font-mono">Standby</span>
+                </div>
+                <!-- Card Indicator Sounds -->
+                <div id="sounds-indicator-card" class="bg-white p-3 rounded-lg shadow flex items-center">
+                    <span id="sounds-indicator" class="inline-block w-3 h-3 rounded-full bg-red-500 mr-2"></span>
+                    <span class="font-mono">Sounds</span>
+                </div>
+                <!-- Card Jam -->
+                <div class="bg-white p-3 rounded-lg shadow flex items-center">
+                    <i class="fas fa-clock text-blue-500 mr-2"></i>
+                    <span id="current-time" class="font-mono">00:00:00</span>
+                </div>
+                <!-- Card Tanggal -->
+                <div class="bg-white p-3 rounded-lg shadow flex items-center">
+                    <i class="fas fa-calendar-day text-blue-500 mr-2"></i>
+                    <span id="current-date" class="font-mono">01/01/2023</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Grid Layout -->
+        <div class="grid grid-cols-3 gap-6">
+            <!-- Call History - Span 2 rows di kolom 1-2 -->
+            <div class="col-span-2 row-span-2 bg-white p-6 rounded-lg shadow h-[calc(100vh-9.5rem)]">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-blue-700">
+                        <i class="fas fa-history mr-2"></i>Call History
+                    </h2>
+                    <button id="clear-history" class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 py-1 px-3 rounded">
+                        <i class="fas fa-trash-alt mr-1"></i> Clear History
+                    </button>
+                </div>
+                
+                <div class="h-[calc(100%-4rem)] overflow-y-auto custom-scrollbar">
+                    <table class="min-w-full bg-white">
+                        <thead class="sticky top-0 bg-white z-10 shadow-sm">
+                            <tr class="bg-gray-100 text-gray-700">
+                                <th class="py-2 px-4 text-left">Kode</th>
+                                <th class="py-2 px-4 text-left">Kamar</th>
+                                <th class="py-2 px-4 text-left">Bed</th>
+                                <th class="py-2 px-4 text-left">Alert</th>
+                                <th class="py-2 px-4 text-left">Status</th>
+                                <th class="py-2 px-4 text-left">Time</th>
+                                <th class="py-2 px-4 text-left">Response Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="call-history" class="divide-y divide-gray-200">
+                            <!-- History will appear here -->
+                            <tr>
+                                <td colspan="7" class="py-4 text-center text-gray-500">
+                                    No call history yet
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Test Panel - Kolom 3 -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-4 text-blue-700">
+                    <i class="fas fa-vial mr-2"></i>Test Panel
+                </h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-gray-700 mb-2">Simulate Call</label>
+                        <div class="flex space-x-2">
+                            <input type="number" id="test-room" min="1" max="99" placeholder="Room" class="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500">
+                            <input type="number" id="test-bed" min="1" max="9" placeholder="Bed" class="flex-1 p-2 border rounded focus:ring-2 focus:ring-blue-500">
+                            <button id="test-call" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">
+                                <i class="fas fa-bell mr-1"></i> Test
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-gray-700 mb-2">Manual Input</label>
+                        <div class="flex">
+                            <input type="text" id="manual-input" placeholder="Enter call code (e.g., 101)" class="flex-1 p-2 border rounded-l focus:ring-2 focus:ring-blue-500">
+                            <button id="manual-submit" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-r">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
+                        <p class="text-sm">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            For testing without hardware, use the test panel or manual input.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Alerts - Kolom 3 -->
+            <div class="bg-white p-6 rounded-lg shadow h-[calc(100vh-32rem)]">
+                <h2 class="text-xl font-semibold mb-4 text-blue-700">
+                    <i class="fas fa-bell mr-2"></i>Active Alerts
+                </h2>
+                
+                <div id="active-alerts" class="h-[calc(100%-4rem)] overflow-y-auto custom-scrollbar">
+                    <!-- Default state when no alerts -->
+                    <div class="flex flex-col justify-center items-center text-gray-400 h-full">
+                        <i class="fas fa-bell-slash text-6xl mb-2"></i>
+                        <p class="text-lg">Tidak ada peringatan aktif</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Action Buttons -->
+    <div class="fixed bottom-8 right-8 flex flex-col items-end space-y-4 z-50">
+        <button id="fab-master-settings" title="Master Data" class="mb-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-full shadow-lg w-16 h-16 flex items-center justify-center animate-fab-bounce relative group">
+            <i class="fas fa-database text-2xl"></i>
+            <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Master Data</span>
+        </button>
+        <button id="fab-master-settings2" title="Master Settings" class="mb-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg w-16 h-16 flex items-center justify-center animate-fab-bounce relative group">
+            <i class="fas fa-tools text-2xl"></i>
+            <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Master Settings</span>
+        </button>
+        <button id="fab-alerts-settings" title="Alerts Settings" class="bg-green-700 hover:bg-green-800 text-white rounded-full shadow-lg w-16 h-16 flex items-center justify-center animate-fab-bounce relative group">
+            <i class="fas fa-bell text-2xl"></i>
+            <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Alerts Settings</span>
+        </button>
+    </div>
+
+    <!-- Master Settings Modal -->
+    <div id="master-settings-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-7xl shadow-lg rounded-md bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold text-gray-900"><i class="fas fa-database mr-2"></i>Master Data</h3>
+                <button id="close-master-settings" class="text-gray-400 hover:text-gray-500">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="mb-4 flex space-x-2">
+                <button id="new-master-data" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center">
+                    <i class="fas fa-plus mr-2"></i> New
+                </button>
+                <button id="edit-master-data" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center">
+                    <i class="fas fa-edit mr-2"></i> Edit
+                </button>
+                <button id="delete-master-data" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex items-center">
+                    <i class="fas fa-trash mr-2"></i> Delete
+                </button>
+                <button id="save-master-data" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center">
+                    <i class="fas fa-save mr-2"></i> Save
+                </button>
+                <button id="import-sounds" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded flex items-center">
+                    <i class="fas fa-file-audio mr-2"></i> Import Sounds
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="py-2 px-4 border">ID</th>
+                            <th class="py-2 px-4 border">Char Code</th>
+                            <th class="py-2 px-4 border">Room Name</th>
+                            <th class="py-2 px-4 border">Bed Name</th>
+                            <th class="py-2 px-4 border">Shape</th>
+                            <th class="py-2 px-4 border">SA</th>
+                            <th class="py-2 px-4 border">V1</th>
+                            <th class="py-2 px-4 border">V2</th>
+                            <th class="py-2 px-4 border">V3</th>
+                            <th class="py-2 px-4 border">V4</th>
+                            <th class="py-2 px-4 border">V5</th>
+                            <th class="py-2 px-4 border">V6</th>
+                        </tr>
+                    </thead>
+                    <tbody id="master-settings-table">
+                        <!-- Data will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts Settings Modal -->
+    <div id="alerts-settings-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold text-gray-900">Alerts Settings</h3>
+                <button id="close-alerts-settings" class="text-gray-400 hover:text-gray-500">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div id="alerts-settings-content">
+                <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">Display Format</label>
+                    <select id="display-format" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
+                        <option value="K{room}B{bed}">K{room}B{bed} (e.g., K1B1)</option>
+                        <option value="Room {room} Bed {bed}">Room {room} Bed {bed}</option>
+                        <option value="Bed {bed}, Room {room}">Bed {bed}, Room {room}</option>
+                        <option value="R{room}-B{bed}">R{room}-B{bed}</option>
+                        <option value="custom">Custom Format</option>
+                    </select>
+                </div>
+                
+                <div id="custom-format-container" class="mb-4 hidden">
+                    <label class="block text-gray-700 mb-2">Custom Format</label>
+                    <input type="text" id="custom-format" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" placeholder="e.g., Room-{room}_Bed-{bed}">
+                    <p class="text-xs text-gray-500 mt-1">Use {room} for room number and {bed} for bed number</p>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">Alert Duration (seconds)</label>
+                    <input type="number" id="alert-duration" min="5" max="600" value="30" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
+                </div>
+                
+                <div class="flex items-center mb-4">
+                    <input type="checkbox" id="sound-alert" class="mr-2 h-5 w-5">
+                    <label for="sound-alert" class="text-gray-700">Enable Sound Alert</label>
+                </div>
+                
+                <button id="apply-settings" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded flex items-center justify-center">
+                    <i class="fas fa-save mr-2"></i> Apply Settings
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Audio element for alerts -->
+    <audio id="alert-sound" src="sounds/ding.wav" preload="auto"></audio>
+
+    <!-- Master Data Password Modal -->
+    <div id="master-data-password-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="relative top-40 mx-auto p-5 border w-full max-w-xs shadow-lg rounded-md bg-white flex flex-col items-center">
+            <h3 class="text-lg font-semibold mb-4">Masukkan Password Master Data</h3>
+            <input id="master-data-password-input" type="password" class="w-full p-2 border rounded mb-3" placeholder="Password">
+            <div id="master-data-password-error" class="text-red-500 text-sm mb-2 hidden">Password salah!</div>
+            <button id="master-data-password-submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Submit</button>
+        </div>
+    </div>
+
+    <!-- Master Settings Modal -->
+    <div id="master-settings2-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold text-gray-900"><i class="fas fa-tools mr-2"></i>Master Settings</h3>
+                <button id="close-master-settings2" class="text-gray-400 hover:text-gray-500">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 mb-2">COM Port</label>
+                <select id="master-com" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
+                    <option value="">Select COM Port</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <p class="text-sm text-gray-600 italic">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Baud rate must be 9600
+                </p>
+            </div>
+            <div class="flex space-x-4 mb-4">
+                <button id="master-connect-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded flex items-center justify-center">
+                    <i class="fas fa-plug mr-2"></i> Connect
+                </button>
+                <button id="master-disconnect-btn" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded flex items-center justify-center" disabled>
+                    <i class="fas fa-power-off mr-2"></i> Disconnect
+                </button>
+            </div>
+            <div class="mt-4 p-3 bg-gray-100 rounded hidden" id="master-connection-status">
+                <p class="text-sm flex items-center">
+                    <i class="fas fa-circle mr-2 text-gray-500"></i>
+                    <span>Disconnected</span>
+                </p>
+            </div>
+            <!-- Serial Monitor -->
+            <div id="serial-monitor" class="mt-4 p-3 bg-gray-100 rounded hidden">
+                <div class="flex justify-between items-center mb-2">
+                    <h4 class="text-sm font-semibold">Serial Monitor</h4>
+                    <button id="clear-monitor" class="text-xs text-gray-600 hover:text-gray-800">
+                        <i class="fas fa-trash-alt"></i> Clear
+                    </button>
+                </div>
+                <div id="serial-data" class="h-32 overflow-y-auto bg-white p-2 rounded text-xs font-mono"></div>
+            </div>
+            <div class="space-y-4 mb-4 mt-4">
+                <div>
+                    <label class="block text-gray-700 mb-2">Name</label>
+                    <input type="text" id="master-name" class="w-full p-2 border rounded" placeholder="Name">
+                </div>
+                <div>
+                    <label class="block text-gray-700 mb-2">Bot</label>
+                    <input type="text" id="master-bot" class="w-full p-2 border rounded" placeholder="Bot">
+                </div>
+                <div>
+                    <label class="block text-gray-700 mb-2">ID Chat</label>
+                    <input type="text" id="master-idchat" class="w-full p-2 border rounded" placeholder="ID Chat">
+                </div>
+                <div>
+                    <label class="block text-gray-700 mb-2">Server</label>
+                    <input type="text" id="master-server" class="w-full p-2 border rounded" placeholder="Server">
+                </div>
+            </div>
+            <button id="master-save-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded flex items-center justify-center">
+                <i class="fas fa-save mr-2"></i> Save
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        // Update current time and date
+        function updateDateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
+            const dateStr = now.toLocaleDateString('en-GB');
+            document.getElementById('current-time').textContent = timeStr;
+            document.getElementById('current-date').textContent = dateStr;
+        }
+        
+        setInterval(updateDateTime, 1000);
+        updateDateTime();
+
+        // Call history storage
+        let callHistory = [];
+        let activeAlerts = [];
+        let displayFormat = "K{room}B{bed}";
+        let alertDuration = 30;
+        let soundEnabled = false;
+        let isConnected = false;
+
+        // Master Data
+        let masterData = [];
+        let selectedRow = null;
+        let nextId = 1;
+        let soundFiles = [];
+
+        // Alert Settings
+        let alertSettings = {
+            displayFormat: "K{room}B{bed}",
+            alertDuration: 30,
+            soundEnabled: false,
+            customFormat: ""
+        };
+
+        // Master Settings
+        let masterSettings = {
+            com: "",
+            name: "",
+            bot: "",
+            idChat: "",
+            server: ""
+        };
+
+        // Fungsi untuk menghapus dan menambahkan kembali event listener
+        function reattachEventListener(elementId, eventType, handler) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                const clone = element.cloneNode(true);
+                element.parentNode.replaceChild(clone, element);
+                clone.addEventListener(eventType, handler);
+            }
+        }
+        
+        // Initialize the app
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Load sound files dan update indicator di awal
+            await loadSoundFiles();
+            updateSoundsIndicator();
+            
+            // Load master data, alert settings, dan master settings saat aplikasi pertama kali dibuka
+            await loadMasterData();
+            await loadAlertSettings();
+            await loadMasterSettings();
+            
+            // Test Panel
+            const testCall = document.getElementById('test-call');
+            const testRoom = document.getElementById('test-room');
+            const testBed = document.getElementById('test-bed');
+            const manualInput = document.getElementById('manual-input');
+            const manualSubmit = document.getElementById('manual-submit');
+
+            if (testCall) {
+                testCall.addEventListener('click', function() {
+                    const room = testRoom.value;
+                    const bed = testBed.value;
+                
+                if (room && bed) {
+                    const code = `${room.padStart(2, '0')}${bed}`;
+                    processCall(code);
+                        testRoom.value = '';
+                        testBed.value = '';
+                } else {
+                    alert('Please enter both room and bed numbers');
+                }
+            });
+            }
+
+            if (manualSubmit) {
+                manualSubmit.addEventListener('click', function() {
+                    const input = manualInput.value.trim();
+                if (input) {
+                    processCall(input);
+                        manualInput.value = '';
+                }
+            });
+            }
+            
+            if (manualInput) {
+                manualInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                        manualSubmit.click();
+                    }
+                });
+            }
+
+            // Master Data Save
+            const saveMasterData = document.getElementById('save-master-data');
+            if (saveMasterData) {
+                saveMasterData.addEventListener('click', async () => {
+                    try {
+                        const data = await ipcRenderer.invoke('load-config');
+                        const result = await ipcRenderer.invoke('save-config', {
+                            ...data,
+                            masterData: masterData
+                        });
+                        if (!result) throw new Error('Failed to save master data');
+                        alert('Master data saved successfully!');
+                        await loadMasterData();
+                } catch (error) {
+                        console.error('Error saving master data:', error);
+                        alert('Error saving master data: ' + error.message);
+                    }
+                });
+            }
+
+            // Master Settings Save
+            if (document.getElementById('master-save-btn')) {
+                document.getElementById('master-save-btn').addEventListener('click', async function() {
+                    try {
+                        const data = await ipcRenderer.invoke('load-config');
+                        const newMasterSettings = {
+                            com: document.getElementById('master-com').value,
+                            name: document.getElementById('master-name').value,
+                            bot: document.getElementById('master-bot').value,
+                            idChat: document.getElementById('master-idchat').value,
+                            server: document.getElementById('master-server').value
+                        };
+                        
+                        const result = await ipcRenderer.invoke('save-config', {
+                            ...data,
+                            masterSettings: newMasterSettings
+                        });
+                        
+                        if (!result) throw new Error('Failed to save master settings');
+                        masterSettings = newMasterSettings;
+                        alert('Settings saved successfully!');
+                } catch (error) {
+                        console.error('Error saving settings:', error);
+                        alert('Error saving settings: ' + error.message);
+                    }
+                });
+            }
+
+            // Floating Button Master Data
+            const fabMasterData = document.getElementById('fab-master-settings');
+            if (fabMasterData) {
+                fabMasterData.addEventListener('click', () => {
+                    console.log('Master Data FAB clicked');
+                    const passwordModal = document.getElementById('master-data-password-modal');
+                    const passwordInput = document.getElementById('master-data-password-input');
+                    const passwordError = document.getElementById('master-data-password-error');
+                    
+                    if (passwordModal && passwordInput && passwordError) {
+                        passwordModal.classList.remove('hidden');
+                        passwordInput.value = '';
+                        passwordError.classList.add('hidden');
+                        passwordInput.focus();
+                    }
+                });
+            }
+
+            // Floating Button Master Settings
+            const fabMasterSettings = document.getElementById('fab-master-settings2');
+            if (fabMasterSettings) {
+                fabMasterSettings.addEventListener('click', async () => {
+                    console.log('Master Settings FAB clicked');
+                    const settingsModal = document.getElementById('master-settings2-modal');
+                    if (settingsModal) {
+                        settingsModal.classList.remove('hidden');
+                        await populateMasterComPorts();
+                        await loadMasterSettings();
+                        
+                        // Isi field input dari masterSettings
+                        document.getElementById('master-com').value = masterSettings.com || "";
+                        document.getElementById('master-name').value = masterSettings.name || "";
+                        document.getElementById('master-bot').value = masterSettings.bot || "";
+                        document.getElementById('master-idchat').value = masterSettings.idChat || "";
+                        document.getElementById('master-server').value = masterSettings.server || "";
+                    }
+                });
+            }
+
+            // Floating Button Alert Settings
+            const fabAlertSettings = document.getElementById('fab-alerts-settings');
+            if (fabAlertSettings) {
+                fabAlertSettings.addEventListener('click', () => {
+                    console.log('Alert Settings FAB clicked');
+                    const modal = document.getElementById('alerts-settings-modal');
+                    const formatSelect = document.getElementById('display-format');
+                    const customFormat = document.getElementById('custom-format');
+                    const alertDurationInput = document.getElementById('alert-duration');
+                    const soundAlertCheckbox = document.getElementById('sound-alert');
+                    const customFormatContainer = document.getElementById('custom-format-container');
+
+                    // Set nilai awal sesuai dengan alertSettings
+                    formatSelect.value = alertSettings.displayFormat;
+                    customFormat.value = alertSettings.customFormat;
+                    alertDurationInput.value = alertSettings.alertDuration;
+                    soundAlertCheckbox.checked = alertSettings.soundEnabled;
+                    
+                    if (formatSelect.value === 'custom') {
+                        customFormatContainer.classList.remove('hidden');
+                    } else {
+                        customFormatContainer.classList.add('hidden');
+                    }
+
+                    modal.classList.remove('hidden');
+                });
+            }
+
+            // Close buttons untuk modal
+            const closeButtons = {
+                masterData: document.getElementById('close-master-settings'),
+                masterSettings: document.getElementById('close-master-settings2'),
+                alertSettings: document.getElementById('close-alerts-settings')
+            };
+
+            if (closeButtons.masterData) {
+                closeButtons.masterData.addEventListener('click', () => {
+                    document.getElementById('master-settings-modal').classList.add('hidden');
+                });
+            }
+
+            if (closeButtons.masterSettings) {
+                closeButtons.masterSettings.addEventListener('click', () => {
+                    document.getElementById('master-settings2-modal').classList.add('hidden');
+                });
+            }
+
+            if (closeButtons.alertSettings) {
+                closeButtons.alertSettings.addEventListener('click', () => {
+                    document.getElementById('alerts-settings-modal').classList.add('hidden');
+                });
+            }
+
+            // Password submit untuk Master Data
+            const passwordSubmit = document.getElementById('master-data-password-submit');
+            if (passwordSubmit) {
+                passwordSubmit.addEventListener('click', () => {
+                    const password = document.getElementById('master-data-password-input').value;
+                    const passwordModal = document.getElementById('master-data-password-modal');
+                    const masterModal = document.getElementById('master-settings-modal');
+                    const passwordError = document.getElementById('master-data-password-error');
+
+                    if (password === 'NHX)(*&^') {
+                        passwordModal.classList.add('hidden');
+                        masterModal.classList.remove('hidden');
+                        loadMasterData();
+                    } else {
+                        passwordError.classList.remove('hidden');
+                    }
+                });
+            }
+
+            // Event listeners untuk tombol-tombol Master Data
+            if (elements.newMasterData) {
+                elements.newMasterData.addEventListener('click', () => {
+                const newRow = {
+                    id: nextId++,
+                    charCode: '',
+                    roomName: '',
+                    bedName: '',
+                    shape: '',
+                    sa: '',
+                    v1: '',
+                    v2: '',
+                    v3: '',
+                    v4: '',
+                    v5: '',
+                    v6: ''
+                };
+                masterData.push(newRow);
+                updateMasterDataTable();
+                makeRowEditable(newRow.id);
+            });
+            }
+
+            if (elements.editMasterData) {
+                elements.editMasterData.addEventListener('click', () => {
+                if (selectedRow) {
+                    makeRowEditable(selectedRow);
+                } else {
+                    alert('Silakan pilih baris yang akan diedit');
+                }
+            });
+            }
+
+            if (elements.deleteMasterData) {
+                elements.deleteMasterData.addEventListener('click', () => {
+                if (selectedRow) {
+                    if (confirm('Apakah Anda yakin ingin menghapus data ini?')) {
+                        masterData = masterData.filter(r => r.id !== selectedRow);
+                        selectedRow = null;
+                        updateMasterDataTable();
+                    }
+                } else {
+                    alert('Silakan pilih baris yang akan dihapus');
+                }
+            });
+            }
+
+            if (elements.importSoundsBtn) {
+                elements.importSoundsBtn.addEventListener('click', async () => {
+                const { dialog } = require('electron').remote || require('@electron/remote');
+                const fs = require('fs');
+                const path = require('path');
+                const appPath = require('electron').remote ? require('electron').remote.app.getAppPath() : require('@electron/remote').app.getAppPath();
+                const soundsDir = path.join(appPath, 'sounds');
+                if (!fs.existsSync(soundsDir)) fs.mkdirSync(soundsDir);
+                const result = await dialog.showOpenDialog({
+                    title: 'Import .wav Files',
+                    filters: [{ name: 'WAV Files', extensions: ['wav'] }],
+                    properties: ['openFile', 'multiSelections']
+                });
+                if (!result.canceled && result.filePaths.length > 0) {
+                    result.filePaths.forEach(filePath => {
+                        const fileName = path.basename(filePath);
+                        const destPath = path.join(soundsDir, fileName);
+                        if (!fs.existsSync(destPath)) {
+                            fs.copyFileSync(filePath, destPath);
+                        }
+                    });
+                    alert('Import file .wav berhasil!');
+                    loadSoundFiles();
+                    updateSoundsIndicator();
+                }
+            });
+            }
+
+            // Event listener untuk Master Settings Connect/Disconnect
+            const masterConnectBtn = document.getElementById('master-connect-btn');
+            const masterDisconnectBtn = document.getElementById('master-disconnect-btn');
+            
+            if (masterConnectBtn) {
+                masterConnectBtn.addEventListener('click', masterConnectPort);
+            }
+            
+            if (masterDisconnectBtn) {
+                masterDisconnectBtn.addEventListener('click', masterDisconnectPort);
+            }
+
+            // Tambahkan event listener untuk menutup modal saat klik di luar
+            window.addEventListener('click', (e) => {
+                if (e.target === elements.masterDataPasswordModal) {
+                    elements.masterDataPasswordModal.classList.add('hidden');
+                }
+                if (e.target === elements.masterSettingsModal) {
+                    elements.masterSettingsModal.classList.add('hidden');
+                }
+                if (e.target === elements.alertSettingsModal) {
+                    elements.alertSettingsModal.classList.add('hidden');
+                }
+                if (e.target === elements.masterDataModal) {
+                    elements.masterDataModal.classList.add('hidden');
+                }
+            });
+
+            // Prevent modal close when clicking inside modal content
+            const modalContents = document.querySelectorAll('.modal-content');
+            modalContents.forEach(content => {
+                content.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+            });
+
+            // Hapus event listener lama yang terduplikasi
+            const oldButtons = [
+                'master-settings',
+                'fab-master-settings',
+                'fab-master-settings2',
+                'fab-alerts-settings'
+            ];
+            
+            oldButtons.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    const newElement = element.cloneNode(true);
+                    element.parentNode.replaceChild(newElement, element);
+                }
+            });
+
+            // Event listener untuk format display di Alert Settings
+            document.getElementById('display-format').addEventListener('change', function() {
+                const customFormatContainer = document.getElementById('custom-format-container');
+                if (this.value === 'custom') {
+                    customFormatContainer.classList.remove('hidden');
+                } else {
+                    customFormatContainer.classList.add('hidden');
+                    alertSettings.displayFormat = this.value;
+                }
+            });
+            
+            // Event listener untuk Apply Settings di Alert Settings
+            document.getElementById('apply-settings').addEventListener('click', function() {
+                const formatSelect = document.getElementById('display-format');
+                const customFormat = document.getElementById('custom-format');
+                const alertDurationInput = document.getElementById('alert-duration');
+                const soundAlertCheckbox = document.getElementById('sound-alert');
+
+                if (formatSelect.value === 'custom') {
+                    alertSettings.displayFormat = 'custom';
+                    alertSettings.customFormat = customFormat.value || "K{room}B{bed}";
+                    displayFormat = alertSettings.customFormat;
+                } else {
+                    alertSettings.displayFormat = formatSelect.value;
+                    alertSettings.customFormat = "";
+                    displayFormat = alertSettings.displayFormat;
+                }
+                
+                alertSettings.alertDuration = parseInt(alertDurationInput.value) || 30;
+                alertSettings.soundEnabled = soundAlertCheckbox.checked;
+                
+                alertDuration = alertSettings.alertDuration;
+                soundEnabled = alertSettings.soundEnabled;
+                
+                saveAlertSettings();
+                
+                alert('Settings saved successfully!');
+                document.getElementById('alerts-settings-modal').classList.add('hidden');
+            });
+            
+            // Connect button
+            reattachEventListener('connect-btn', 'click', async function() {
+                const comPort = document.getElementById('com-port')?.value;
+                const baudRate = 9600; // Fixed baud rate
+                
+                if (!comPort) {
+                    alert('Please select a COM port');
+                    return;
+                }
+                
+                try {
+                    await ipcRenderer.invoke('connect-port', { port: comPort, baudRate });
+                    isConnected = true;
+                    updateConnectionStatus();
+                    updateComIndicator();
+                } catch (error) {
+                    console.error('Connection error:', error);
+                    alert('Failed to connect to port. Please try again.');
+                }
+            });
+            
+            // Disconnect button
+            reattachEventListener('disconnect-btn', 'click', async function() {
+                try {
+                    await ipcRenderer.invoke('disconnect-port');
+                    isConnected = false;
+                    updateConnectionStatus();
+                    updateComIndicator();
+                } catch (error) {
+                    console.error('Disconnection error:', error);
+                    alert('Failed to disconnect from port.');
+                }
+            });
+            
+            // Clear history button
+            reattachEventListener('clear-history', 'click', function() {
+                if (confirm('Are you sure you want to clear the call history?')) {
+                    callHistory = [];
+                    updateCallHistory();
+                }
+            });
+
+            // Listen for serial data
+            ipcRenderer.on('serial-data', (event, code) => {
+                processCall(code);
+            });
+            
+            // Initialize connection status
+            updateConnectionStatus();
+
+            // Populate COM ports di background setiap 5 detik
+            setInterval(populateMasterComPorts, 5000);
+            populateMasterComPorts();
+
+            // Update status koneksi di background setiap 2 detik (jaga-jaga)
+            setInterval(updateMasterConnectionStatus, 2000);
+
+            // Pastikan status koneksi diupdate saat modal Master Settings dibuka
+            reattachEventListener('fab-master-settings2', 'click', () => {
+                setTimeout(updateMasterConnectionStatus, 100);
+            });
+        });
+        
+        // Update connection status display
+        function updateConnectionStatus() {
+            if (masterIsConnected) {
+                document.getElementById('standby-indicator').classList.remove('bg-red-500');
+                document.getElementById('standby-indicator').classList.add('bg-gray-500');
+            } else {
+                document.getElementById('standby-indicator').classList.remove('bg-gray-500');
+                document.getElementById('standby-indicator').classList.add('bg-red-500');
+            }
+            updateComIndicator();
+        }
+        
+        // Tambahkan fungsi untuk menangani kedip indikator
+        function blinkIndicator(color, times = 1) {
+            const standbyIndicator = document.getElementById('standby-indicator');
+            let count = 0;
+            
+            function blink() {
+                if (count < times * 2) {
+                    standbyIndicator.classList.toggle(`bg-${color}-500`);
+                    setTimeout(blink, 500);
+                    count++;
+                } else {
+                    // Kembalikan ke warna asal
+                    if (masterIsConnected) {
+                        standbyIndicator.classList.remove(`bg-${color}-500`);
+                        standbyIndicator.classList.add('bg-gray-500');
+                    } else {
+                        standbyIndicator.classList.remove(`bg-${color}-500`);
+                        standbyIndicator.classList.add('bg-red-500');
+                    }
+                }
+            }
+            
+            blink();
+        }
+        
+        // Helper function untuk format datetime
+        function formatDateTime(date) {
+            const timeStr = date.toLocaleTimeString('en-US', { hour12: false });
+            return `${timeStr}.${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
+        }
+
+        // Process a call (code format: RRB where RR is room (01-99) and B is bed (1-9))
+        function processCall(code) {
+            console.log('Processing call with code:', code); // Debug log
+            
+            // Jika kode adalah 99, kedip kuning
+            if (code === '99') {
+                blinkIndicator('yellow');
+                return;
+            }
+            
+            // Handle reset code (prefix 90)
+            if (code.startsWith('90')) {
+                const bedNumber = code.substring(2); // Ambil nomor bed
+                const originalCode = `10${bedNumber}`; // Rekonstruksi kode asli
+                
+                console.log('Reset code detected. Original code:', originalCode); // Debug log
+                
+                // Cari alert yang aktif dengan kode yang sesuai
+                const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode);
+                if (alertIndex !== -1) {
+                    const now = new Date();
+                    const resetTimeStr = formatDateTime(now);
+                    
+                    // Update status di call history
+                    const historyIndex = callHistory.findIndex(call => call.code === originalCode && call.status === 'active');
+                    if (historyIndex !== -1) {
+                        console.log('Updating call history for reset'); // Debug log
+                        callHistory[historyIndex].status = 'completed';
+                        callHistory[historyIndex].resetTime = now;
+                        callHistory[historyIndex].resetTimeStr = resetTimeStr;
+                    }
+                    
+                    // Update status alert yang aktif
+                    activeAlerts[alertIndex].status = 'completed';
+                    activeAlerts[alertIndex].resetTime = now;
+                    activeAlerts[alertIndex].resetTimeStr = resetTimeStr;
+                    
+                    // Tampilkan alert hijau dengan font biru
+                    const alertElement = document.querySelector(`[data-alert-id="${activeAlerts[alertIndex].id}"]`);
+                    if (alertElement) {
+                        alertElement.classList.remove('bg-red-100', 'border-red-500');
+                        alertElement.classList.add('bg-green-100', 'border-green-500');
+                        
+                        // Update warna teks dan background
+                        const title = alertElement.querySelector('h3');
+                        const time = alertElement.querySelector('span.bg-red-500');
+                        const button = alertElement.querySelector('button');
+                        const roomText = alertElement.querySelector('p.text-red-600');
+                        const codeText = alertElement.querySelector('span.text-gray-500');
+                        
+                        if (title) title.classList.replace('text-red-800', 'text-blue-800');
+                        if (time) {
+                            time.classList.remove('bg-red-500');
+                            time.classList.add('bg-blue-500');
+                        }
+                        if (button) {
+                            button.classList.remove('bg-red-500', 'hover:bg-red-600');
+                            button.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                            button.innerHTML = '<i class="fas fa-check mr-1"></i> Selesai';
+                        }
+                        if (roomText) roomText.classList.replace('text-red-600', 'text-blue-600');
+                        if (codeText) codeText.classList.replace('text-gray-500', 'text-blue-500');
+                        
+                        // Hapus alert setelah 30 detik
+                        setTimeout(() => {
+                            const idx = activeAlerts.findIndex(a => a.id === activeAlerts[alertIndex].id);
+                            if (idx !== -1) {
+                                activeAlerts.splice(idx, 1);
+                                updateActiveAlerts();
+                            }
+                        }, 30000);
+                    }
+                    
+                    updateActiveAlerts();
+                    updateCallHistory();
+                }
+                return;
+            }
+            
+            // Jika kode adalah 101-10100, kedip hijau dua kali
+            const codeNum = parseInt(code);
+            if (codeNum >= 101 && codeNum <= 10100) {
+                blinkIndicator('green', 2);
+            }
+            
+            // Find matching master data
+            const data = masterData.find(d => d.charCode === code);
+            const now = new Date();
+            const timeStr = formatDateTime(now);
+            let callEntry;
+            
+            if (data) {
+                console.log('Found data for code:', code, data);
+                
+                // Play sounds in sequence
+                const sounds = [];
+                if (data.v1) sounds.push(data.v1);
+                if (data.v2) sounds.push(data.v2);
+                if (data.v3) sounds.push(data.v3);
+                if (data.v4) sounds.push(data.v4);
+                if (data.v5) sounds.push(data.v5);
+                if (data.v6) sounds.push(data.v6);
+                
+                if (sounds.length > 0) {
+                    console.log('Starting sound sequence for code:', code);
+                    playSoundsInSequence(sounds);
+                }
+            
+                const displayText = `${data.roomName} - ${data.bedName}`;
+                
+                callEntry = {
+                    id: Date.now(),
+                    code: code,
+                    room: data.roomName,
+                    bed: data.bedName,
+                    display: displayText,
+                    time: timeStr,
+                    timestamp: now,
+                    status: 'active',
+                    resetTime: null,
+                    resetTimeStr: ''
+                };
+            } else {
+                console.log('No data found for code:', code);
+                
+                callEntry = {
+                    id: Date.now(),
+                    code: code,
+                    room: `Room ${code.substring(0, 2)}`,
+                    bed: `Bed ${code.substring(2)}`,
+                    display: `Room ${code.substring(0, 2)} - Bed ${code.substring(2)}`,
+                    time: timeStr,
+                    timestamp: now,
+                    status: 'active',
+                    resetTime: null,
+                    resetTimeStr: ''
+                };
+            }
+            
+            console.log('Adding new call entry:', callEntry); // Debug log
+            
+            callHistory.unshift(callEntry);
+            activeAlerts.push({...callEntry});
+            
+            updateActiveAlerts();
+            updateCallHistory();
+        }
+        
+        function playSoundsInSequence(sounds) {
+            let currentIndex = 0;
+            
+            function playNext() {
+                if (currentIndex < sounds.length) {
+                    const sound = new Audio();
+                    const soundPath = `sounds/${sounds[currentIndex]}`;
+                    sound.src = soundPath;
+                    console.log('Attempting to play sound:', soundPath); // Debug log
+                    
+                    // Tambahkan event listener untuk debugging
+                    sound.addEventListener('loadstart', () => console.log('Sound loading started:', soundPath));
+                    sound.addEventListener('canplay', () => console.log('Sound can play:', soundPath));
+                    sound.addEventListener('playing', () => console.log('Sound is playing:', soundPath));
+                    sound.addEventListener('ended', () => console.log('Sound ended:', soundPath));
+                    sound.addEventListener('error', (e) => console.error('Sound error:', e, soundPath));
+                    
+                    sound.oncanplaythrough = () => {
+                        console.log('Sound can play through:', soundPath);
+                        sound.play().then(() => {
+                            console.log('Sound started playing successfully:', soundPath);
+                        }).catch(e => {
+                            console.error('Error playing sound:', e, soundPath);
+                            currentIndex++;
+                            playNext();
+                        });
+                    };
+                    
+                    sound.onended = () => {
+                        console.log('Sound finished playing:', soundPath);
+                        currentIndex++;
+                        playNext();
+                    };
+                    
+                    sound.onerror = (e) => {
+                        console.error('Error loading sound:', e, soundPath);
+                        currentIndex++;
+                        playNext();
+                    };
+                } else {
+                    console.log('Finished playing all sounds');
+                }
+            }
+            
+            if (sounds.length > 0) {
+                console.log('Starting to play sounds sequence:', sounds);
+                playNext();
+            } else {
+                console.log('No sounds to play');
+            }
+        }
+        
+        // Update active alerts display
+        function updateActiveAlerts() {
+            const container = document.getElementById('active-alerts');
+            
+            if (activeAlerts.length === 0) {
+                container.innerHTML = `
+                    <div class="flex flex-col justify-center items-center text-gray-400 h-full">
+                        <i class="fas fa-bell-slash text-6xl mb-2"></i>
+                        <p class="text-lg">Tidak ada peringatan aktif</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            activeAlerts.forEach(alert => {
+                const alertElement = document.createElement('div');
+                const isCompleted = alert.status === 'completed';
+                
+                alertElement.className = `border-l-4 p-4 alert-pulse ${
+                    isCompleted ? 'bg-green-100 border-green-500' : 'bg-red-100 border-red-500'
+                }`;
+                alertElement.setAttribute('data-alert-id', alert.id);
+                alertElement.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-bold text-lg ${isCompleted ? 'text-blue-800' : 'text-red-800'}">${alert.display}</h3>
+                            <p class="text-sm ${isCompleted ? 'text-blue-600' : 'text-red-600'}">Ruangan ${alert.room}</p>
+                        </div>
+                        <span class="text-xs text-white px-2 py-1 rounded ${isCompleted ? 'bg-blue-500' : 'bg-red-500'}">${alert.time}</span>
+                    </div>
+                    <div class="mt-2 flex justify-between items-center">
+                        <span class="text-xs ${isCompleted ? 'text-blue-500' : 'text-gray-500'}">Kode: ${alert.code}</span>
+                        <button onclick="removeAlert(${alert.id})" class="text-xs text-white px-2 py-1 rounded ${
+                            isCompleted ? 'bg-blue-500 hover:bg-blue-600' : 'bg-red-500 hover:bg-red-600'
+                        }">
+                            <i class="fas fa-check mr-1"></i> ${isCompleted ? 'Selesai' : 'Nurse Call'}
+                        </button>
+                    </div>
+                `;
+                container.appendChild(alertElement);
+            });
+        }
+        
+        // Update call history display
+        function updateCallHistory() {
+            const tbody = document.getElementById('call-history');
+            
+            if (callHistory.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="py-4 text-center text-gray-500">
+                            No call history yet
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            
+            callHistory.forEach(call => {
+                const row = document.createElement('tr');
+                row.className = call.status === 'active' ? 'bg-red-50' : '';
+                
+                row.innerHTML = `
+                    <td class="py-2 px-4 font-mono">${call.code}</td>
+                    <td class="py-2 px-4">${call.room}</td>
+                    <td class="py-2 px-4">${call.bed}</td>
+                    <td class="py-2 px-4 font-medium">${call.display}</td>
+                    <td class="py-2 px-4">
+                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            call.status === 'active' 
+                                ? 'bg-red-100 text-red-800' 
+                                : 'bg-green-100 text-green-800'
+                        }">
+                            ${call.status === 'active' ? 'Active' : 'Completed'}
+                        </span>
+                    </td>
+                    <td class="py-2 px-4">${call.time}</td>
+                    <td class="py-2 px-4">${call.resetTimeStr || ''}</td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        async function loadMasterData() {
+            try {
+                const data = await ipcRenderer.invoke('load-config');
+                console.log('Loaded config data:', data); // Debug log
+                masterData = data.masterData || [];
+                console.log('Master data after loading:', masterData); // Debug log
+                if (masterData.length > 0) {
+                    nextId = Math.max(...masterData.map(r => r.id)) + 1;
+                } else {
+                    nextId = 1;
+                }
+                updateMasterDataTable();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                alert('Gagal memuat data: ' + error.message);
+            }
+        }
+
+        function updateMasterDataTable() {
+            const tbody = document.getElementById('master-settings-table');
+            tbody.innerHTML = '';
+
+            masterData.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-id', row.id);
+                tr.className = selectedRow === row.id ? 'bg-blue-50' : '';
+                tr.onclick = (e) => {
+                    if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'select') return;
+                    selectedRow = row.id;
+                    updateMasterDataTable();
+                };
+
+                tr.innerHTML = `
+                    <td class="py-2 px-4 border">${row.id}</td>
+                    <td class="py-2 px-4 border"><input type="text" class="w-full p-1 border rounded" value="${row.charCode}"></td>
+                    <td class="py-2 px-4 border"><input type="text" class="w-full p-1 border rounded" value="${row.roomName}"></td>
+                    <td class="py-2 px-4 border"><input type="text" class="w-full p-1 border rounded" value="${row.bedName}"></td>
+                    <td class="py-2 px-4 border"><input type="text" class="w-full p-1 border rounded" value="${row.shape}"></td>
+                    <td class="py-2 px-4 border"><input type="text" class="w-full p-1 border rounded" value="${row.sa}"></td>
+                    <td class="py-2 px-4 border"><select class="w-full p-1 border rounded">${soundOptions(row.v1)}</select></td>
+                    <td class="py-2 px-4 border"><select class="w-full p-1 border rounded">${soundOptions(row.v2)}</select></td>
+                    <td class="py-2 px-4 border"><select class="w-full p-1 border rounded">${soundOptions(row.v3)}</select></td>
+                    <td class="py-2 px-4 border"><select class="w-full p-1 border rounded">${soundOptions(row.v4)}</select></td>
+                    <td class="py-2 px-4 border"><select class="w-full p-1 border rounded">${soundOptions(row.v5)}</select></td>
+                    <td class="py-2 px-4 border"><select class="w-full p-1 border rounded">${soundOptions(row.v6)}</select></td>
+                `;
+
+                // Add event listeners to inputs & selects
+                const inputs = tr.querySelectorAll('input');
+                inputs.forEach((input, index) => {
+                    input.addEventListener('change', (e) => {
+                        const field = ['charCode', 'roomName', 'bedName', 'shape', 'sa'][index];
+                        row[field] = e.target.value;
+                    });
+                    // Agar klik pada input tidak trigger tr.onclick
+                    input.addEventListener('mousedown', e => e.stopPropagation());
+                    input.addEventListener('click', e => e.stopPropagation());
+                });
+                const selects = tr.querySelectorAll('select');
+                selects.forEach((select, idx) => {
+                    select.addEventListener('change', (e) => {
+                        const field = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6'][idx];
+                        row[field] = e.target.value;
+                    });
+                    // Agar klik pada select tidak trigger tr.onclick
+                    select.addEventListener('mousedown', e => e.stopPropagation());
+                    select.addEventListener('click', e => e.stopPropagation());
+                });
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        function soundOptions(selected) {
+            return `<option value="">-</option>` + soundFiles.map(f => `<option value="${f}" ${selected === f ? 'selected' : ''}>${f}</option>`).join('');
+        }
+        
+        function loadSoundFiles() {
+            const fs = require('fs');
+            const path = require('path');
+            const appPath = require('electron').remote ? require('electron').remote.app.getAppPath() : require('@electron/remote').app.getAppPath();
+            const soundsDir = path.join(appPath, 'sounds');
+            
+            try {
+                if (!fs.existsSync(soundsDir)) {
+                    fs.mkdirSync(soundsDir);
+                }
+            soundFiles = fs.readdirSync(soundsDir).filter(f => f.endsWith('.wav'));
+                console.log('Loaded sound files:', soundFiles); // Debug log
+            updateSoundsIndicator();
+                return soundFiles;
+            } catch (error) {
+                console.error('Error loading sound files:', error);
+                return [];
+            }
+        }
+        
+        function updateSoundsIndicator() {
+            const el = document.getElementById('sounds-indicator');
+            if (!el) return;
+            
+            console.log('Updating sounds indicator. Sound files:', soundFiles); // Debug log
+            
+            if (soundFiles && soundFiles.length > 0) {
+                el.classList.remove('bg-red-500');
+                el.classList.add('bg-green-500');
+            } else {
+                el.classList.remove('bg-green-500');
+                el.classList.add('bg-red-500');
+            }
+        }
+
+        async function loadAlertSettings() {
+            try {
+                const data = await ipcRenderer.invoke('load-config');
+                console.log('Loaded config data:', data); // Debug log
+                
+                if (data.alertSettings) {
+                    alertSettings = data.alertSettings;
+                    // Update variabel global
+                    displayFormat = alertSettings.displayFormat === 'custom' ? alertSettings.customFormat : alertSettings.displayFormat;
+                    alertDuration = alertSettings.alertDuration;
+                    soundEnabled = alertSettings.soundEnabled;
+                    
+                    // Update UI elements
+                    const formatSelect = document.getElementById('display-format');
+                    const customFormat = document.getElementById('custom-format');
+                    const alertDurationInput = document.getElementById('alert-duration');
+                    const soundAlertCheckbox = document.getElementById('sound-alert');
+                    const customFormatContainer = document.getElementById('custom-format-container');
+                    
+                    if (formatSelect) formatSelect.value = alertSettings.displayFormat;
+                    if (customFormat) customFormat.value = alertSettings.customFormat;
+                    if (alertDurationInput) alertDurationInput.value = alertSettings.alertDuration;
+                    if (soundAlertCheckbox) soundAlertCheckbox.checked = alertSettings.soundEnabled;
+                    
+                    if (formatSelect && formatSelect.value === 'custom') {
+                        customFormatContainer.classList.remove('hidden');
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading alert settings:', error);
+            }
+        }
+
+        async function saveAlertSettings() {
+            try {
+                const data = await ipcRenderer.invoke('load-config');
+                const result = await ipcRenderer.invoke('save-config', {
+                    ...data,
+                    alertSettings: {
+                        displayFormat: alertSettings.displayFormat,
+                        customFormat: alertSettings.customFormat,
+                        alertDuration: alertSettings.alertDuration,
+                        soundEnabled: alertSettings.soundEnabled
+                    }
+                });
+                
+                if (!result) {
+                    throw new Error('Failed to save alert settings');
+                }
+
+                // Update variabel global setelah berhasil menyimpan
+                displayFormat = alertSettings.displayFormat === 'custom' ? alertSettings.customFormat : alertSettings.displayFormat;
+                alertDuration = alertSettings.alertDuration;
+                soundEnabled = alertSettings.soundEnabled;
+
+                console.log('Alert settings saved successfully:', alertSettings);
+            } catch (error) {
+                console.error('Error saving alert settings:', error);
+                alert('Error saving alert settings: ' + error.message);
+            }
+        }
+
+        async function loadMasterSettings() {
+            try {
+                const data = await ipcRenderer.invoke('load-config');
+                if (data.masterSettings) {
+                    masterSettings = data.masterSettings;
+                } else {
+                    masterSettings = { com: "", name: "", bot: "", idChat: "", server: "" };
+                }
+                console.log('Loaded masterSettings:', masterSettings); // Debug log
+            } catch (error) {
+                console.error('Error loading master settings:', error);
+            }
+        }
+
+        // Fungsi untuk populate COM port pada Master Settings
+        async function populateMasterComPorts() {
+            try {
+                const ports = await ipcRenderer.invoke('get-ports');
+                const comSelect = document.getElementById('master-com');
+                // Clear existing options except the first one
+                while (comSelect.options.length > 1) {
+                    comSelect.remove(1);
+                }
+                ports.forEach(port => {
+                    const option = document.createElement('option');
+                    option.value = port.path;
+                    option.textContent = `${port.path} (${port.manufacturer})`;
+                    comSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error getting ports:', error);
+            }
+        }
+
+        // Variabel global untuk status koneksi
+        let masterIsConnected = false;
+        let masterSelectedPort = "";
+
+        // Fungsi update status koneksi di Master Settings
+        function updateMasterConnectionStatus() {
+            const statusElement = document.getElementById('master-connection-status');
+            const connectBtn = document.getElementById('master-connect-btn');
+            const disconnectBtn = document.getElementById('master-disconnect-btn');
+            const standbyIndicator = document.getElementById('standby-indicator');
+            
+            if (!statusElement || !connectBtn || !disconnectBtn) return;
+            
+            statusElement.classList.remove('hidden');
+            
+            if (masterIsConnected) {
+                statusElement.innerHTML = `
+                    <p class="text-sm flex items-center">
+                        <i class="fas fa-circle mr-2 text-green-500"></i>
+                        <span>Connected to ${masterSelectedPort} @ 9600 baud</span>
+                    </p>
+                `;
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                standbyIndicator.classList.remove('bg-red-500');
+                standbyIndicator.classList.add('bg-gray-500');
+            } else {
+                statusElement.innerHTML = `
+                    <p class="text-sm flex items-center">
+                        <i class="fas fa-circle mr-2 text-gray-500"></i>
+                        <span>Disconnected</span>
+                    </p>
+                `;
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                standbyIndicator.classList.remove('bg-gray-500');
+                standbyIndicator.classList.add('bg-red-500');
+            }
+        }
+
+        // Fungsi connect/disconnect port di background
+        async function masterConnectPort() {
+            const comPort = document.getElementById('master-com').value;
+            const baudRate = 9600;
+            if (!comPort) {
+                alert('Please select a COM port');
+                return;
+            }
+            try {
+                await ipcRenderer.invoke('connect-port', { port: comPort, baudRate });
+                masterIsConnected = true;
+                masterSelectedPort = comPort;
+                isConnected = true;
+                updateMasterConnectionStatus();
+                updateConnectionStatus();
+                
+                // Show serial monitor
+                document.getElementById('serial-monitor').classList.remove('hidden');
+            } catch (error) {
+                console.error('Connection error:', error);
+                alert('Failed to connect to port. Please try again.');
+            }
+        }
+
+        async function masterDisconnectPort() {
+            try {
+                await ipcRenderer.invoke('disconnect-port');
+                masterIsConnected = false;
+                masterSelectedPort = "";
+                isConnected = false;
+                updateMasterConnectionStatus();
+                updateConnectionStatus();
+                
+                // Hide and clear serial monitor
+                const serialMonitor = document.getElementById('serial-monitor');
+                serialMonitor.classList.add('hidden');
+                document.getElementById('serial-data').innerHTML = '';
+            } catch (error) {
+                console.error('Disconnection error:', error);
+                alert('Failed to disconnect from port.');
+            }
+        }
+
+        // Serial monitor functionality
+        ipcRenderer.on('serial-monitor-data', (event, data) => {
+            const serialData = document.getElementById('serial-data');
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
+            
+            // Add new data with timestamp
+            const dataElement = document.createElement('div');
+            dataElement.className = 'mb-1';
+            dataElement.innerHTML = `<span class="text-gray-500">[${timeStr}]</span> ${data}`;
+            
+            serialData.appendChild(dataElement);
+            
+            // Auto-scroll to bottom
+            serialData.scrollTop = serialData.scrollHeight;
+            
+            // Limit the number of entries (keep last 100)
+            while (serialData.children.length > 100) {
+                serialData.removeChild(serialData.firstChild);
+            }
+        });
+
+        // Clear monitor button
+        document.getElementById('clear-monitor')?.addEventListener('click', () => {
+            document.getElementById('serial-data').innerHTML = '';
+        });
+    </script>
+</body>
+</html>

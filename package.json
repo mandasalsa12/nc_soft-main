@@ -1,0 +1,121 @@
+{
+  "name": "nurse-call-system",
+  "version": "1.0.0",
+  "description": "Sistem Panggilan Perawat",
+  "main": "main.js",
+  "scripts": {
+    "start": "cross-env NODE_OPTIONS=\"\" electron .",
+    "dev": "cross-env NODE_OPTIONS=\"\" electron . --debug",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:win-x64": "node scripts/force-rebuild-win.js && electron-builder --win --x64",
+    "build:win-ia32": "node scripts/force-rebuild-win.js && electron-builder --win --ia32",
+    "build:dir": "electron-builder --dir",
+    "force-rebuild-win": "node scripts/force-rebuild-win.js",
+    "rebuild:native": "npx @electron/rebuild",
+    "clean:native": "rimraf node_modules/@serialport/bindings-cpp/build node_modules/speaker/build node_modules/@serialport/bindings-cpp/prebuilds node_modules/speaker/prebuilds",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@electron/remote": "^2.1.2",
+    "@serialport/parser-readline": "^12.0.0",
+    "node-wav": "^0.0.2",
+    "serialport": "^12.0.0",
+    "speaker": "^0.5.5"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "@electron/rebuild": "^3.6.0",
+    "rimraf": "^5.0.5",
+    "prebuild-install": "^7.1.1"
+  },
+  "build": {
+    "appId": "com.ams-indo.ncsoft",
+    "productName": "NC Soft - Nurse Call System",
+    "directories": {
+      "output": "dist",
+      "buildResources": "buildResources"
+    },
+    "electronVersion": "28.3.3",
+    "nodeGypRebuild": true,
+    "buildDependenciesFromSource": true,
+    "npmRebuild": true,
+    "forceCodeSigning": false,
+    "files": [
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "mac": {
+      "category": "public.app-category.medical"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "publisherName": "AMS Indo",
+      "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NC Soft",
+      "runAfterFinish": false,
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": false
+    },
+    "extraResources": [
+      {
+        "from": "sounds/",
+        "to": "sounds/",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "images/",
+        "to": "images/",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "buildResources/dependencies.bat",
+        "to": "dependencies.bat"
+      },
+      {
+        "from": "buildResources/install-dependencies.ps1",
+        "to": "install-dependencies.ps1"
+      }
+    ],
+    "extraMetadata": {
+      "main": "main.js",
+      "dependencies": {
+        "@electron/remote": "^2.1.2",
+        "@serialport/parser-readline": "^12.0.0",
+        "serialport": "^12.0.0",
+        "speaker": "^0.5.5",
+        "node-wav": "^0.0.2"
+      }
+    }
+  }
+}
