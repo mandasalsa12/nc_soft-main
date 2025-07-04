@@ -21,14 +21,25 @@ jobs:
         node-version: '18'
         cache: 'npm'
         
-    - name: Install Python
+    - name: Setup Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.x'
+        python-version: '3.11'
         
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v2
+      
     - name: Install dependencies
       run: |
-        npm install
+        npm install --no-optional
+      env:
+        npm_config_target: 28.3.3
+        npm_config_arch: x64
+        npm_config_target_arch: x64
+        npm_config_disturl: https://electronjs.org/headers
+        npm_config_runtime: electron
+        npm_config_cache: C:\npm\cache
+        ELECTRON_CACHE: C:\electron\cache
         
     - name: Build Windows installer
       run: |
