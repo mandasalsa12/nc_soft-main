@@ -2085,12 +2085,8 @@
                     // Update ke main process
                     updatePersistentStateToMain();
 
-                    // Tambahkan notifikasi OS untuk reset
-                    showOSNotification(
-                        'Nurse Call - Reset',
-                        `${activeAlerts[alertIndex].display} telah ditangani`,
-                        'normal'
-                    );
+                    // Tambahkan notifikasi OS untuk reset - ENHANCED FORMAT
+                    showEnhancedOSNotification(originalCode, 'reset');
                 }
                 return;
             }
@@ -2163,12 +2159,8 @@
                 // Kirim update call history ke main process untuk dibagikan dengan display.html
                 updateCallHistoryToMain();
                 
-                // Tampilkan notifikasi OS untuk alert baru - HANYA SEKALI DI SINI
-                showOSNotification(
-                    'Nurse Call',
-                    `${displayText} membutuhkan bantuan`,
-                    'critical'
-                );
+                // Tampilkan notifikasi OS untuk alert baru - ENHANCED FORMAT
+                showEnhancedOSNotification(code, 'call');
                 
                 updateActiveAlerts();
                 updateCallHistory();
@@ -2250,6 +2242,41 @@
                 await ipcRenderer.invoke('show-system-notification', { title, body, urgency });
             } catch (error) {
                 console.error('Error showing system notification:', error);
+            }
+        }
+
+        // Fungsi helper untuk membuat OS notification dengan format lengkap
+        async function showEnhancedOSNotification(code, type = 'call') {
+            try {
+                const data = masterData.find(d => d.charCode === code);
+                if (!data) {
+                    console.warn('No master data found for OS notification code:', code);
+                    return;
+                }
+
+                // Clean and format room and bed names
+                const cleanRoom = data.roomName.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim();
+                const cleanBed = data.bedName.replace(/^(Bed|B\.)\s*/i, '').trim();
+                
+                // Get shape type from master data or default to NC
+                const shapeType = data.shape || 'NC';
+                
+                // Format: "NC - Anggrek1 - Bed 1"
+                const body = `${shapeType} - ${cleanRoom} - Bed ${cleanBed}`;
+                
+                let title, urgency;
+                if (type === 'call') {
+                    title = 'Nurse Call';
+                    urgency = 'critical';
+                } else if (type === 'reset') {
+                    title = 'Nurse Call - Telah Ditangani';
+                    urgency = 'normal';
+                }
+                
+                console.log('📢 [INDEX] Sending enhanced OS notification:', { title, body, urgency });
+                await ipcRenderer.invoke('show-system-notification', { title, body, urgency });
+            } catch (error) {
+                console.error('Error showing enhanced system notification:', error);
             }
         }
 
