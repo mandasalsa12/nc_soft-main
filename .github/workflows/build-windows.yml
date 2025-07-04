@@ -1,0 +1,42 @@
+name: Build Windows Installer
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'yarn'
+        
+    - name: Install Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+        
+    - name: Install dependencies
+      run: |
+        yarn install
+        
+    - name: Build Windows installer
+      run: |
+        yarn build:win-x64
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-installer
+        path: dist/*.exe
+        retention-days: 30 
