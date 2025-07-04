@@ -248,16 +248,22 @@
                     
                     console.log('🏗️ [DISPLAY] Display config loaded:', shapes.length, 'shapes');
                     
-                    // Log posisi shapes yang dimuat untuk debugging
+                    // Log posisi shapes yang dimuat untuk debugging - ENHANCED
                     shapes.forEach((shape, index) => {
                         console.log(`📍 [DISPLAY] Shape ${index + 1}: CODE="${shape.code}" TYPE="${shape.type}" at (${shape.x}, ${shape.y}) size ${shape.width}x${shape.height} color="${shape.color}"`);
                     });
                     
+                    // Log semua kode shape yang tersedia untuk memudahkan debugging
+                    const shapeCodes = shapes.map(s => s.code).filter(code => code && code.trim() !== '');
+                    console.log('🔍 [DISPLAY] Available shape codes for blinking:', shapeCodes);
+                    
                     // Render floor plan dan shapes
                     renderFloorplan();
+                } else {
+                    console.warn('⚠️ [DISPLAY] No display config found');
                 }
             } catch (error) {
-                console.error('Error loading display config:', error);
+                console.error('❌ [DISPLAY] Error loading display config:', error);
             }
         }
 
@@ -558,9 +564,49 @@
             }
             
             if (data.activeAlerts) {
+                const previousActiveAlerts = [...activeAlerts];
                 activeAlerts = data.activeAlerts;
                 console.log('⚠️ [DISPLAY] Active alerts updated:', activeAlerts.length, 'alerts');
                 console.log('📋 [DISPLAY] Current active alerts statuses:', activeAlerts.map(a => ({ code: a.code, status: a.status })));
+                
+                // Check for new active alerts and trigger blinking
+                activeAlerts.forEach(alert => {
+                    if (alert.status === 'active') {
+                        const wasAlreadyActive = previousActiveAlerts.find(prev => prev.code === alert.code && prev.status === 'active');
+                        if (!wasAlreadyActive) {
+                            console.log('🔔 [DISPLAY] New active alert detected:', alert.code, '- triggering blinking');
+                            
+                            // Find and start blinking for the shape
+                            const shape = shapes.find(s => s.code === alert.code);
+                            if (shape) {
+                                console.log('✅ [DISPLAY] Found shape for code:', alert.code, '- starting blinking');
+                                shape.blinking = true;
+                                blinkingShapes.set(alert.code, true);
+                                
+                                // Add to persistent blinking
+                                persistentBlinking.set(alert.code, true);
+                                
+                                // Start animation if not already running
+                                if (!animationFrameId) {
+                                    console.log('🎬 [DISPLAY] Starting animation loop for new blinking shape');
+                                    renderShapes();
+                                }
+                            } else {
+                                console.warn('⚠️ [DISPLAY] Shape not found for new alert code:', alert.code);
+                                console.log('🔍 [DISPLAY] Available shapes:', shapes.map(s => ({ code: s.code, type: s.type })));
+                            }
+                        }
+                    } else if (alert.status === 'completed') {
+                        // Stop blinking for completed alerts
+                        const shape = shapes.find(s => s.code === alert.code);
+                        if (shape && shape.blinking) {
+                            console.log('🛑 [DISPLAY] Stopping blinking for completed alert:', alert.code);
+                            shape.blinking = false;
+                            blinkingShapes.delete(alert.code);
+                            persistentBlinking.delete(alert.code);
+                        }
+                    }
+                });
                 
                 // Update notification popups based on active alerts
                 updateNotificationPopups();
@@ -860,7 +906,7 @@
             }
         }
 
-                        // Load display config saat startup
+        // Load display config saat startup
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 await loadMasterData(); // Load master data first
@@ -869,6 +915,12 @@
                 
                 // Load active alerts and call history from main process
                 await loadActiveAlertsFromMain();
+                
+                // Trigger blinking for any existing active alerts after shapes are loaded
+                if (shapes.length > 0 && activeAlerts.length > 0) {
+                    console.log('🔄 [DISPLAY] Shapes and alerts loaded, triggering blinking...');
+                    triggerBlinkingForActiveAlerts();
+                }
                 
                 // Initialize global audio element
                 ensureGlobalAudioElement();
@@ -982,6 +1034,9 @@
                                 }
                             }
                         });
+                        
+                        // Also trigger blinking for current active alerts
+                        triggerBlinkingForActiveAlerts();
                         
                         // Start render loop if needed
                         if (persistentBlinking.size > 0 && !animationFrameId) {
@@ -1684,6 +1739,33 @@
 
         console.log('Display.html test functions loaded. Use window.testDisplayCall for testing.');
         console.log('Available test functions: testShapeBlinking(code), stopShapeBlinking(code), showShapes(), forceRender(), debugPopupIssue(), clearAll()');
+
+        // Helper function untuk trigger blinking pada shape berdasarkan active alerts
+        function triggerBlinkingForActiveAlerts() {
+            console.log('🔄 [DISPLAY] Triggering blinking for all active alerts...');
+            
+            activeAlerts.forEach(alert => {
+                if (alert.status === 'active') {
+                    const shape = shapes.find(s => s.code === alert.code);
+                    if (shape) {
+                        console.log('✅ [DISPLAY] Starting blinking for active alert:', alert.code);
+                        shape.blinking = true;
+                        blinkingShapes.set(alert.code, true);
+                        persistentBlinking.set(alert.code, true);
+                    } else {
+                        console.warn('⚠️ [DISPLAY] Shape not found for active alert:', alert.code);
+                        console.log('🔍 [DISPLAY] Available shapes:', shapes.map(s => ({ code: s.code, type: s.type })));
+                    }
+                }
+            });
+            
+            // Start animation if there are blinking shapes
+            const hasBlinkingShapes = Array.from(blinkingShapes.values()).some(isBlinking => isBlinking);
+            if (hasBlinkingShapes && !animationFrameId) {
+                console.log('🎬 [DISPLAY] Starting animation loop for active blinking shapes');
+                renderShapes();
+            }
+        }
     </script>
 </body>
 </html> 
