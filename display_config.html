@@ -31,6 +31,9 @@
         /* Custom styles untuk maximize space usage */
         .container {
             max-width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
         }
         
         /* Override Tailwind container constraints */
@@ -43,51 +46,89 @@
         body {
             margin: 0;
             padding: 0;
+            height: 100vh;
+            overflow: hidden;
         }
         
         #floorplan-container {
             border-width: 1px;
             margin: 0 auto;
             display: block;
-        }
-        
-        /* Responsive adjustments */
-        @media (max-width: 1279px) {
-            .grid {
-                grid-template-columns: 1fr;
-                gap: 0.75rem;
-            }
-            
-            #floorplan-container {
-                height: calc(100vh - 200px) !important;
-            }
-            
-            .max-w-6xl {
-                max-width: 95%;
-            }
-        }
-        
-        @media (max-width: 768px) {
-            #floorplan-container {
-                height: calc(100vh - 180px) !important;
-            }
-            
-            .max-w-6xl {
-                max-width: 98%;
-            }
-        }
-        
-        /* Centered floorplan styling */
-        .floorplan-wrapper {
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: calc(100vh - 200px);
+            width: 100%;
+            height: calc(100vh - 120px) !important;
+            position: relative;
+            overflow: hidden;
         }
         
         /* Center layout optimizations */
         .max-w-6xl {
-            max-width: 72rem;
+            max-width: 100%;
+            height: 100%;
+        }
+        
+        /* Floorplan wrapper styling */
+        .floorplan-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: calc(100vh - 120px);
+            padding: 0 16px;
+        }
+
+        /* Image and canvas responsive styling */
+        #floorplan-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #f3f4f6;
+        }
+
+        #shape-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Header area responsive */
+        .header-area {
+            padding: 8px 16px;
+            height: 80px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1279px) {
+            .header-area {
+                height: 60px;
+            }
+            
+            #floorplan-container {
+                height: calc(100vh - 100px) !important;
+            }
+            
+            .floorplan-wrapper {
+                height: calc(100vh - 100px);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .header-area {
+                height: 50px;
+            }
+            
+            #floorplan-container {
+                height: calc(100vh - 90px) !important;
+            }
+            
+            .floorplan-wrapper {
+                height: calc(100vh - 90px);
+                padding: 0 8px;
+            }
         }
     </style>
 </head>
@@ -1614,14 +1655,18 @@
                 // Proses panggilan dan catat ke call history
                 const now = new Date();
                 const timeStr = formatDateTime(now);
-                const displayText = `${data.roomName} - ${data.bedName}`;
                 
-                // Buat entry call history baru
+                // Clean room and bed names - remove prefixes
+                const cleanRoom = data.roomName.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim();
+                const cleanBed = data.bedName.replace(/^(Bed|B\.)\s*/i, '').trim();
+                const displayText = `${cleanRoom} - ${cleanBed}`;
+                
+                // Buat entry call history baru dengan format yang lebih sederhana
                 const callEntry = {
                     id: Date.now(),
                     code: code,
-                    room: data.roomName,
-                    bed: data.bedName,
+                    room: cleanRoom,
+                    bed: cleanBed,
                     display: displayText,
                     time: timeStr,
                     timestamp: now,
@@ -1784,17 +1829,19 @@
                 // Get shape type from master data or default to NC
                 const shapeType = data.shape || 'NC';
                 
-                // Format: "NC - Anggrek1 - Bed 1"
-                const body = `${shapeType} - ${cleanRoom} - Bed ${cleanBed}`;
+                // Format title selalu sama
+                const title = 'Nurse Call Response System';
                 
-                let title, urgency;
-                if (type === 'call') {
-                    title = 'Nurse Call';
-                    urgency = 'critical';
-                } else if (type === 'reset') {
-                    title = 'Nurse Call - Telah Ditangani';
-                    urgency = 'normal';
-                }
+                // Format body: ShapeType - Room - Bed
+                const bodyLine1 = `${shapeType} - ${cleanRoom} - ${cleanBed}`;
+                // Format status line berdasarkan tipe
+                const bodyLine2 = type === 'call' ? 'Menunggu Response' : 'Telah Di Tangani';
+                
+                // Gabungkan body dengan line break
+                const body = `${bodyLine1}\n${bodyLine2}`;
+                
+                // Set urgency berdasarkan tipe
+                const urgency = type === 'call' ? 'critical' : 'normal';
                 
                 console.log('📢 [DISPLAY_CONFIG] Sending enhanced OS notification:', { title, body, urgency });
                 await ipcRenderer.invoke('show-system-notification', { title, body, urgency });

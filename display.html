@@ -110,6 +110,9 @@
         /* Custom styles untuk maximize space usage */
         .container {
             max-width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
         }
         
         /* Override Tailwind container constraints */
@@ -122,46 +125,89 @@
         body {
             margin: 0;
             padding: 0;
+            height: 100vh;
+            overflow: hidden;
         }
         
         #floorplan-container {
             border-width: 1px;
             margin: 0 auto;
             display: block;
+            width: 100%;
+            height: calc(100vh - 120px) !important;
+            position: relative;
+            overflow: hidden;
         }
         
         /* Center layout optimizations */
         .max-w-6xl {
-            max-width: 72rem;
+            max-width: 100%;
+            height: 100%;
         }
         
-        /* Responsive adjustments for centered layout */
+        /* Floorplan wrapper styling */
+        .floorplan-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: calc(100vh - 120px);
+            padding: 0 16px;
+        }
+
+        /* Image and canvas responsive styling */
+        #floorplan-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #f3f4f6;
+        }
+
+        #shape-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Header area responsive */
+        .header-area {
+            padding: 8px 16px;
+            height: 80px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Responsive adjustments */
         @media (max-width: 1279px) {
-            #floorplan-container {
-                height: calc(100vh - 200px) !important;
+            .header-area {
+                height: 60px;
             }
             
-            .max-w-6xl {
-                max-width: 95%;
+            #floorplan-container {
+                height: calc(100vh - 100px) !important;
+            }
+            
+            .floorplan-wrapper {
+                height: calc(100vh - 100px);
             }
         }
         
         @media (max-width: 768px) {
-            #floorplan-container {
-                height: calc(100vh - 180px) !important;
+            .header-area {
+                height: 50px;
             }
             
-            .max-w-6xl {
-                max-width: 98%;
+            #floorplan-container {
+                height: calc(100vh - 90px) !important;
             }
-        }
-        
-        /* Centered floorplan styling */
-        .floorplan-wrapper {
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: calc(100vh - 200px);
+            
+            .floorplan-wrapper {
+                height: calc(100vh - 90px);
+                padding: 0 8px;
+            }
         }
     </style>
 </head>
@@ -1448,16 +1494,17 @@
                 return;
             }
 
-            // For new calls (10x)
+            // Untuk kode panggilan normal (10x atau 10xx)
             if (code.startsWith('10')) {
+                console.log('Processing call code:', code);
+                
+                // Cek apakah kode ada di master data dan memiliki data lengkap
                 const data = masterData.find(d => d.charCode === code);
                 if (!isValidMasterData(data)) {
                     console.log('Call code not found or incomplete in master data:', code);
                     showNotification('warning', `Kode ${code} tidak ditemukan atau data tidak lengkap`);
                     return;
                 }
-                
-                console.log('🔔 [DISPLAY] Processing call code:', code, 'Data found:', data);
                 
                 // Kedip biru sekali
                 setStandbyIndicator('blue');
@@ -1469,17 +1516,21 @@
                     }
                 }, 500);
 
-                // Process call dan create call entry
+                // Proses panggilan dan catat ke call history
                 const now = new Date();
                 const timeStr = formatDateTime(now);
-                const displayText = `${data.roomName} - ${data.bedName}`;
                 
-                // Create call entry (similar to index.html)
+                // Clean room and bed names - remove prefixes
+                const cleanRoom = data.roomName.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim();
+                const cleanBed = data.bedName.replace(/^(Bed|B\.)\s*/i, '').trim();
+                const displayText = `${cleanRoom} - ${cleanBed}`;
+                
+                // Buat entry call history baru dengan format yang lebih sederhana
                 const callEntry = {
                     id: Date.now(),
                     code: code,
-                    room: data.roomName,
-                    bed: data.bedName,
+                    room: cleanRoom,
+                    bed: cleanBed,
                     display: displayText,
                     time: timeStr,
                     timestamp: now,
@@ -1488,29 +1539,20 @@
                     resetTimeStr: ''
                 };
                 
-                console.log('📝 [DISPLAY] Created call entry with status "active":', callEntry);
-                
-                // Add to call history and active alerts
+                // Tambah ke call history dan active alerts
                 callHistory.unshift(callEntry);
                 activeAlerts.push({...callEntry});
                 
-                console.log('📝 [DISPLAY] Added to arrays:', {
-                    callHistoryLength: callHistory.length,
-                    activeAlertsLength: activeAlerts.length,
-                    addedEntry: callEntry
-                });
+                // Kirim update call history ke main process untuk dibagikan dengan index.html
+                updateCallHistoryToMain();
                 
-                // Show notification popup DIRECTLY - should be RED
-                const timeStrDisplay = now.toLocaleTimeString('en-US', { hour12: false });
-                console.log('🎯 [DISPLAY] About to show popup for NEW call with status:', callEntry.status);
-                showNotificationPopup({
-                    code: code,
-                    room: data.roomName,
-                    bed: data.bedName,
-                    time: timeStrDisplay
-                });
-
-                // Play sounds using main process persistent audio system
+                // Tampilkan notifikasi
+                showNotification('info', `Panggilan: ${displayText}`);
+                
+                // Tampilkan notifikasi OS untuk alert baru - ENHANCED FORMAT
+                showEnhancedOSNotification(code, 'call');
+                
+                // Play sounds dan simpan ke persistent
                 const sounds = [];
                 if (data.v1) sounds.push(data.v1);
                 if (data.v2) sounds.push(data.v2);
@@ -1518,54 +1560,18 @@
                 if (data.v4) sounds.push(data.v4);
                 if (data.v5) sounds.push(data.v5);
                 if (data.v6) sounds.push(data.v6);
-
+                
                 if (sounds.length > 0) {
-                    console.log('🔊 [DISPLAY] Playing sounds for code:', code, 'Sounds:', sounds);
-                    // Use main process persistent audio system
+                    // Gunakan global audio player di main process
+                    console.log('Requesting persistent sound playback for code:', code);
                     ipcRenderer.invoke('play-persistent-sounds', { code, sounds }).then(result => {
                         if (result.success) {
-                            console.log('✅ [DISPLAY] Persistent sound playback started for code:', code);
+                            console.log('Persistent sound playback started for code:', code);
                         } else {
-                            console.error('❌ [DISPLAY] Failed to start persistent sound playback:', result.error);
+                            console.error('Failed to start persistent sound playback:', result.error);
                         }
                     });
-                } else {
-                    console.log('⚠️ [DISPLAY] No sounds found for code:', code);
                 }
-
-                // Start blinking for shape - DEBUG VERSION
-                console.log('🔍 [DISPLAY] Looking for shapes to blink with code:', code);
-                console.log('🔍 [DISPLAY] Available shapes:', shapes.map(s => ({ code: s.code, type: s.type, x: s.x, y: s.y })));
-                
-                let shapeFound = false;
-                shapes.forEach(s => {
-                    if (s.code === code) {
-                        console.log('🔄 [DISPLAY] Starting blink for shape:', s.code, s.type, 'at position:', s.x, s.y);
-                        s.blinking = true;
-                        blinkingShapes.set(code, true);
-                        persistentBlinking.set(code, true);
-                        shapeFound = true;
-                        
-                        if (!animationFrameId) {
-                            console.log('🎬 [DISPLAY] Starting animation frame for blinking');
-                            renderShapes();
-                        }
-                    }
-                });
-                
-                if (!shapeFound) {
-                    console.warn('⚠️ [DISPLAY] No shape found with code:', code);
-                    console.log('🔍 [DISPLAY] All shape codes:', shapes.map(s => s.code));
-                }
-
-                // Update all state (call history, alerts, sounds, blinking) to main process for sync
-                console.log('📤 [DISPLAY] About to sync state to main process...');
-                updatePersistentStateToMain();
-                
-                // Show enhanced OS notification for new call
-                showEnhancedOSNotification(code, 'call');
-                
-                showNotification('info', `Panggilan: ${displayText}`);
             }
         }
 
@@ -1638,17 +1644,19 @@
                 // Get shape type from master data or default to NC
                 const shapeType = data.shape || 'NC';
                 
-                // Format: "NC - Anggrek1 - Bed 1"
-                const body = `${shapeType} - ${cleanRoom} - Bed ${cleanBed}`;
+                // Format title selalu sama
+                const title = 'Nurse Call Response System';
                 
-                let title, urgency;
-                if (type === 'call') {
-                    title = 'Nurse Call';
-                    urgency = 'critical';
-                } else if (type === 'reset') {
-                    title = 'Nurse Call - Telah Ditangani';
-                    urgency = 'normal';
-                }
+                // Format body: ShapeType - Room - Bed
+                const bodyLine1 = `${shapeType} - ${cleanRoom} - ${cleanBed}`;
+                // Format status line berdasarkan tipe
+                const bodyLine2 = type === 'call' ? 'Menunggu Response' : 'Telah Di Tangani';
+                
+                // Gabungkan body dengan line break
+                const body = `${bodyLine1}\n${bodyLine2}`;
+                
+                // Set urgency berdasarkan tipe
+                const urgency = type === 'call' ? 'critical' : 'normal';
                 
                 console.log('📢 [DISPLAY] Sending enhanced OS notification:', { title, body, urgency });
                 await ipcRenderer.invoke('show-system-notification', { title, body, urgency });

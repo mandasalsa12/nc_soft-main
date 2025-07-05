@@ -76,7 +76,9 @@ function createMainWindow() {
             nodeIntegration: true,
             contextIsolation: false,
             enableRemoteModule: true
-        }
+        },
+        fullscreen: true,
+        frame: true
     });
 
     try {
@@ -86,6 +88,10 @@ function createMainWindow() {
     }
 
     mainWindow.loadFile('index.html');
+    
+    mainWindow.once('ready-to-show', () => {
+        mainWindow.setFullScreen(true);
+    });
     
     // Uncomment untuk debugging
     // mainWindow.webContents.openDevTools();
@@ -1309,6 +1315,56 @@ ipcMain.handle('load-persistent-call-history-at-startup', async () => {
     } catch (error) {
         console.error('Error loading persistent call history at startup:', error);
         return [];
+    }
+});
+
+// Handler untuk exit application
+ipcMain.handle('exit-application', async () => {
+    try {
+        // Save config before exit
+        const config = loadConfig();
+        if (saveConfig(config)) {
+            console.log('Configuration saved successfully before exit');
+            
+            // Save call history
+            await saveCompletedCallsToPersistentStorage();
+            console.log('Call history saved successfully before exit');
+        
+        // Stop all audio
+            if (sharedAudioWindow) {
+                sharedAudioWindow.webContents.send('stop-shared-audio');
+        }
+        
+        // Disconnect serial port jika masih terhubung
+        if (serialPort && serialPort.isOpen) {
+            try {
+                await new Promise((resolve, reject) => {
+                    serialPort.close((err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+                    console.log('Serial port disconnected before exit');
+            } catch (error) {
+                console.error('Error disconnecting serial port:', error);
+            }
+        }
+        
+            // Force close all windows
+            BrowserWindow.getAllWindows().forEach(window => {
+                if (!window.isDestroyed()) {
+                    window.destroy();
+            }
+        });
+        
+            // Kill the entire process
+            process.exit(0);
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error('Error during exit:', error);
+        return false;
     }
 });
 
