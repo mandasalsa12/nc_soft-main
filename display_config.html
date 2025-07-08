@@ -253,47 +253,16 @@
     <div id="notification-settings-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
         <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 p-6 border w-full max-w-2xl shadow-xl rounded-lg bg-white">
             <div class="flex justify-between items-center mb-5">
-                <h3 class="text-xl font-semibold text-gray-900">Notification Display Settings</h3>
+                <h3 class="text-xl font-semibold text-gray-900">Display Notification Settings</h3>
                 <button id="close-notification-settings" class="text-gray-400 hover:text-gray-500 p-2 rounded-lg hover:bg-gray-100">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
             <div id="notification-settings-content" class="space-y-6">
-                <!-- Format Section -->
+                <!-- Popup Position Section -->
                 <div class="space-y-4">
-                    <h4 class="text-lg font-medium text-gray-800">Display Format</h4>
+                    <h4 class="text-lg font-medium text-gray-800">Popup Position</h4>
                     <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-gray-700 mb-2">Text Format</label>
-                            <select id="display-notification-format" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                                <option value="K{room}B{bed}">K{room}B{bed} (e.g., K1B1)</option>
-                                <option value="Room {room} Bed {bed}">Room {room} Bed {bed}</option>
-                                <option value="Bed {bed}, Room {room}">Bed {bed}, Room {room}</option>
-                                <option value="R{room}-B{bed}">R{room}-B{bed}</option>
-                                <option value="custom">Custom Format</option>
-                            </select>
-                        </div>
-                        <div id="custom-notification-format-container" class="hidden">
-                            <label class="block text-gray-700 mb-2">Custom Format</label>
-                            <input type="text" id="custom-notification-format" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="e.g., Room-{room}_Bed-{bed}">
-                            <p class="text-xs text-gray-500 mt-1">Use {room} for room number and {bed} for bed number</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Animation & Style Section -->
-                <div class="space-y-4">
-                    <h4 class="text-lg font-medium text-gray-800">Animation & Style</h4>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-gray-700 mb-2">Animation Type</label>
-                            <select id="notification-animation" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                                <option value="slide-right">Slide from Right</option>
-                                <option value="slide-left">Slide from Left</option>
-                                <option value="fade">Fade In/Out</option>
-                                <option value="bounce">Bounce</option>
-                            </select>
-                        </div>
                         <div>
                             <label class="block text-gray-700 mb-2">Position</label>
                             <select id="notification-position" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
@@ -303,52 +272,97 @@
                                 <option value="bottom-left">Bottom Left</option>
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-gray-700 mb-2">Animation</label>
+                            <select id="notification-animation" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="slide-right">Slide from Right</option>
+                                <option value="slide-left">Slide from Left</option>
+                                <option value="fade">Fade In/Out</option>
+                                <option value="bounce">Bounce</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Timing & Behavior Section -->
+                <!-- Popup Style Section -->
                 <div class="space-y-4">
-                    <h4 class="text-lg font-medium text-gray-800">Timing & Behavior</h4>
+                    <h4 class="text-lg font-medium text-gray-800">Popup Style</h4>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-gray-700 mb-2">Display Duration (seconds)</label>
-                            <input type="number" id="notification-alert-duration" min="5" max="600" value="30" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <label class="block text-gray-700 mb-2">Active Color</label>
+                            <select id="notification-active-color" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="red">Red (Default)</option>
+                                <option value="orange">Orange</option>
+                                <option value="yellow">Yellow</option>
+                                <option value="blue">Blue</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 mb-2">Completed Color</label>
+                            <select id="notification-completed-color" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="green">Green (Default)</option>
+                                <option value="blue">Blue</option>
+                                <option value="purple">Purple</option>
+                                <option value="gray">Gray</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Timing Section -->
+                <div class="space-y-4">
+                    <h4 class="text-lg font-medium text-gray-800">Timing</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-gray-700 mb-2">Show Duration (seconds)</label>
+                            <input type="number" id="notification-show-duration" min="1" max="60" value="30" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">How long to show completed notifications</p>
                         </div>
                         <div>
                             <label class="block text-gray-700 mb-2">Animation Speed (ms)</label>
-                            <input type="number" id="notification-animation-speed" min="200" max="2000" value="500" step="100" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <input type="number" id="notification-animation-speed" min="100" max="2000" value="500" step="100" class="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">Speed of slide/fade animations</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- Style Preview -->
+                <!-- Preview Section -->
                 <div class="border rounded-lg p-4 bg-gray-50">
                     <h4 class="text-lg font-medium text-gray-800 mb-3">Preview</h4>
-                    <div id="notification-preview" class="bg-white p-4 rounded-lg shadow-lg border-l-4 border-blue-500">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h3 class="font-bold text-lg text-blue-800">K1B1</h3>
-                                <p class="text-sm text-blue-600">Ruangan Anggrek 1</p>
+                    <div class="space-y-4">
+                        <!-- Active Call Preview -->
+                        <div id="preview-active" class="bg-white p-4 rounded-lg shadow-lg border-l-4 border-red-500">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="font-bold text-lg text-red-800">Nurse Call</h3>
+                                    <p class="text-sm text-red-600">Anggrek1 - 1</p>
+                                </div>
+                                <span class="text-xs text-white px-2 py-1 rounded bg-red-500">16:21:06</span>
                             </div>
-                            <span class="text-xs text-white px-2 py-1 rounded bg-blue-500">16:21:06</span>
+                            <div class="mt-3 flex items-center">
+                                <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                                <span class="ml-2 text-xs text-red-600">Menunggu Response</span>
+                            </div>
+                        </div>
+
+                        <!-- Completed Call Preview -->
+                        <div id="preview-completed" class="bg-white p-4 rounded-lg shadow-lg border-l-4 border-green-500">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="font-bold text-lg text-green-800">Telah Ditangani</h3>
+                                    <p class="text-sm text-green-600">Anggrek1 - 1</p>
+                                </div>
+                                <span class="text-xs text-white px-2 py-1 rounded bg-green-500">16:21:30</span>
+                            </div>
+                            <div class="mt-3 flex items-center">
+                                <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                                <span class="ml-2 text-xs text-green-600">Telah di Respon</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Sound Settings -->
-                <div class="space-y-4">
-                    <h4 class="text-lg font-medium text-gray-800">Sound Settings</h4>
-                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                        <div class="flex items-center">
-                            <input type="checkbox" id="notification-sound-alert" class="w-5 h-5 text-blue-600">
-                            <label for="notification-sound-alert" class="ml-2 text-gray-700">Enable Sound Alert</label>
-                        </div>
-                        <button id="test-sound" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg">
-                            <i class="fas fa-volume-up mr-1"></i> Test Sound
-                        </button>
-                    </div>
-                </div>
-
+                <!-- Save Button -->
                 <button id="apply-notification-settings" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg flex items-center justify-center transition-colors">
                     <i class="fas fa-save mr-2"></i> Apply Settings
                 </button>
@@ -1537,18 +1551,16 @@
             // Khusus untuk kode standby
             if (code === '99' || code === '99:') {
                 const wasInStandby = standbyMode;
+                
+                // Set standby mode dan indikator
                 standbyMode = true;
                 setStandbyIndicator('green');
                 setTimeout(() => {
                     setStandbyIndicator('yellow');
                 }, 500);
                 
-                // Hanya tampilkan notifikasi jika belum dalam mode standby atau sudah 5 detik dari notifikasi terakhir
-                const now = Date.now();
-                if (!wasInStandby || !lastStandbyNotification || (now - lastStandbyNotification) > 5000) {
-                    showNotification('warning', 'Mode Standby Aktif');
-                    lastStandbyNotification = now;
-                }
+                // Hanya update indikator tanpa notifikasi
+                console.log('Entered standby mode - indicator updated');
                 return;
             }
 
@@ -1558,11 +1570,11 @@
                 standbyMode = false;
                 updateConnectionStatus();
                 
-                // Hanya tampilkan notifikasi jika sebelumnya dalam standby
-                if (wasInStandby) {
-                    showNotification('info', 'Sistem keluar dari mode standby');
-                }
-                lastStandbyNotification = null; // Reset notifikasi standby
+                // Hanya update indikator tanpa notifikasi
+                console.log('Exited standby mode - indicator updated');
+                
+                // Reset standby notification state
+                lastStandbyNotification = null;
                 return;
             }
             
@@ -2614,6 +2626,108 @@
         };
 
         console.log('Display functions loaded. Use window.testSerial for testing.');
+
+        // Event listener untuk preview perubahan warna dan animasi secara real-time
+        document.getElementById('notification-active-color').addEventListener('change', function(e) {
+            const color = e.target.value;
+            const preview = document.getElementById('preview-active');
+            const colorMap = {
+                red: ['border-red-500', 'text-red-800', 'text-red-600', 'bg-red-500'],
+                orange: ['border-orange-500', 'text-orange-800', 'text-orange-600', 'bg-orange-500'],
+                yellow: ['border-yellow-500', 'text-yellow-800', 'text-yellow-600', 'bg-yellow-500'],
+                blue: ['border-blue-500', 'text-blue-800', 'text-blue-600', 'bg-blue-500']
+            };
+            
+            // Remove all color classes
+            preview.className = preview.className.replace(/border-(red|orange|yellow|blue)-500/g, '');
+            preview.querySelector('h3').className = preview.querySelector('h3').className.replace(/text-(red|orange|yellow|blue)-800/g, '');
+            preview.querySelector('p').className = preview.querySelector('p').className.replace(/text-(red|orange|yellow|blue)-600/g, '');
+            preview.querySelector('span.rounded').className = preview.querySelector('span.rounded').className.replace(/bg-(red|orange|yellow|blue)-500/g, '');
+            
+            // Add new color classes
+            preview.classList.add(colorMap[color][0]);
+            preview.querySelector('h3').classList.add(colorMap[color][1]);
+            preview.querySelector('p').classList.add(colorMap[color][2]);
+            preview.querySelector('span.rounded').classList.add(colorMap[color][3]);
+        });
+
+        document.getElementById('notification-completed-color').addEventListener('change', function(e) {
+            const color = e.target.value;
+            const preview = document.getElementById('preview-completed');
+            const colorMap = {
+                green: ['border-green-500', 'text-green-800', 'text-green-600', 'bg-green-500'],
+                blue: ['border-blue-500', 'text-blue-800', 'text-blue-600', 'bg-blue-500'],
+                purple: ['border-purple-500', 'text-purple-800', 'text-purple-600', 'bg-purple-500'],
+                gray: ['border-gray-500', 'text-gray-800', 'text-gray-600', 'bg-gray-500']
+            };
+            
+            // Remove all color classes
+            preview.className = preview.className.replace(/border-(green|blue|purple|gray)-500/g, '');
+            preview.querySelector('h3').className = preview.querySelector('h3').className.replace(/text-(green|blue|purple|gray)-800/g, '');
+            preview.querySelector('p').className = preview.querySelector('p').className.replace(/text-(green|blue|purple|gray)-600/g, '');
+            preview.querySelector('span.rounded').className = preview.querySelector('span.rounded').className.replace(/bg-(green|blue|purple|gray)-500/g, '');
+            
+            // Add new color classes
+            preview.classList.add(colorMap[color][0]);
+            preview.querySelector('h3').classList.add(colorMap[color][1]);
+            preview.querySelector('p').classList.add(colorMap[color][2]);
+            preview.querySelector('span.rounded').classList.add(colorMap[color][3]);
+        });
+
+        // Save notification settings
+        document.getElementById('apply-notification-settings').addEventListener('click', async function() {
+            const settings = {
+                position: document.getElementById('notification-position').value,
+                animation: document.getElementById('notification-animation').value,
+                activeColor: document.getElementById('notification-active-color').value,
+                completedColor: document.getElementById('notification-completed-color').value,
+                showDuration: parseInt(document.getElementById('notification-show-duration').value),
+                animationSpeed: parseInt(document.getElementById('notification-animation-speed').value)
+            };
+
+            try {
+                const config = await ipcRenderer.invoke('load-config');
+                const result = await ipcRenderer.invoke('save-config', {
+                    ...config,
+                    notificationSettings: settings
+                });
+
+                if (result) {
+                    showNotification('success', 'Notification settings saved successfully');
+                    document.getElementById('notification-settings-modal').classList.add('hidden');
+                } else {
+                    showNotification('error', 'Failed to save notification settings');
+                }
+            } catch (error) {
+                console.error('Error saving notification settings:', error);
+                showNotification('error', 'Error saving settings: ' + error.message);
+            }
+        });
+
+        // Load existing settings when modal opens
+        document.getElementById('fab-notification-settings').addEventListener('click', async function() {
+            try {
+                const config = await ipcRenderer.invoke('load-config');
+                const settings = config.notificationSettings || {};
+
+                // Set values if they exist
+                if (settings.position) document.getElementById('notification-position').value = settings.position;
+                if (settings.animation) document.getElementById('notification-animation').value = settings.animation;
+                if (settings.activeColor) document.getElementById('notification-active-color').value = settings.activeColor;
+                if (settings.completedColor) document.getElementById('notification-completed-color').value = settings.completedColor;
+                if (settings.showDuration) document.getElementById('notification-show-duration').value = settings.showDuration;
+                if (settings.animationSpeed) document.getElementById('notification-animation-speed').value = settings.animationSpeed;
+
+                // Trigger color preview updates
+                document.getElementById('notification-active-color').dispatchEvent(new Event('change'));
+                document.getElementById('notification-completed-color').dispatchEvent(new Event('change'));
+
+                document.getElementById('notification-settings-modal').classList.remove('hidden');
+            } catch (error) {
+                console.error('Error loading notification settings:', error);
+                showNotification('error', 'Error loading settings: ' + error.message);
+            }
+        });
     </script>
 </body>
 </html> 

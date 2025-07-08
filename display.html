@@ -13,14 +13,13 @@
         /* Active Alert Popup Styles */
         #notification-popup-container {
             position: fixed;
-            top: 24px;
-            right: 24px;
             z-index: 9999;
             width: 320px;
             display: flex;
             flex-direction: column;
             gap: 8px;
             pointer-events: auto;
+            /* Position akan diatur secara dinamis oleh JavaScript berdasarkan notificationSettings */
         }
 
         .notification-popup {
@@ -154,7 +153,7 @@
             height: calc(100vh - 120px);
             padding: 0 16px;
         }
-
+        
         /* Image and canvas responsive styling */
         #floorplan-img {
             width: 100%;
@@ -202,9 +201,9 @@
             
             #floorplan-container {
                 height: calc(100vh - 90px) !important;
-            }
-            
-            .floorplan-wrapper {
+        }
+        
+        .floorplan-wrapper {
                 height: calc(100vh - 90px);
                 padding: 0 8px;
             }
@@ -481,32 +480,30 @@
                 
                 ctx.fill();
                 
-                // Text label dengan alpha yang sama dengan shape
+                // Text label dengan kontras yang lebih baik
+                ctx.globalAlpha = 1;
                 ctx.font = 'bold 11px sans-serif';
                 
-                // Text color dengan alpha yang sama dengan shape
+                // Dynamic text color berdasarkan background
                 if (shape.blinking) {
                     const now = Date.now();
                     const blinkCycle = (now % 1000) / 1000;
-                    const sinValue = Math.sin(blinkCycle * Math.PI * 4);
-                    const alpha = (sinValue + 1) / 2; // Sama dengan shape alpha
-                    
+                    ctx.fillStyle = Math.sin(blinkCycle * Math.PI * 4) > 0 ? '#000000' : '#ffffff';
+                } else {
                     // Gunakan warna kontras yang baik
                     const brightness = getBrightness(baseColor);
-                    const textColor = brightness > 128 ? '#000000' : '#ffffff';
-                    ctx.fillStyle = textColor;
-                    ctx.globalAlpha = alpha; // Text ikut fade dengan shape
-                } else {
-                    // Shape transparan, text juga transparan
-                    ctx.globalAlpha = 0;
+                    ctx.fillStyle = brightness > 128 ? '#000000' : '#ffffff';
                 }
                 
-                // Hanya render text jika ada alpha (visible)
-                if (ctx.globalAlpha > 0) {
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     
-                    // Tampilkan kode dan tipe
+                // Tampilkan hanya tipe shape saat blinking, tampilkan kode dan tipe saat normal
+                if (shape.blinking) {
+                    // Hanya tampilkan tipe shape (NC, KM, CB) saat blinking
+                    ctx.fillText(shape.type, shape.x, shape.y);
+                } else {
+                    // Tampilkan kode dan tipe dengan spacing yang proporsional saat tidak blinking
                     const lines = [shape.code, shape.type];
                     const lineHeight = 12;
                     const totalHeight = lines.length * lineHeight;
@@ -959,6 +956,13 @@
                 await loadDisplayConfig();
                 await loadNotificationSettings();
                 
+                // Set initial container position
+                const container = document.getElementById('notification-popup-container');
+                if (container) {
+                    setContainerPosition(container, notificationSettings.position);
+                    console.log('🎯 [DISPLAY] Initial container position set on startup');
+                }
+                
                 // Load active alerts and call history from main process
                 await loadActiveAlertsFromMain();
                 
@@ -1004,8 +1008,12 @@
             displayFormat: "K{room}B{bed}",
             alertDuration: 30,
             soundEnabled: true,
-            position: "bottom-left",
-            animation: "slide-left"
+            position: "top-right",
+            animation: "slide-right",
+            activeColor: "red",
+            completedColor: "green",
+            showDuration: 30,
+            animationSpeed: 500
         };
 
         // Load master data
@@ -1036,11 +1044,57 @@
             try {
                 const config = await ipcRenderer.invoke('load-config');
                 if (config.notificationSettings) {
+                    console.log('🔧 [DISPLAY] Loading notification settings from config:', config.notificationSettings);
                     notificationSettings = { ...notificationSettings, ...config.notificationSettings };
+                    console.log('🔧 [DISPLAY] Final notification settings:', notificationSettings);
+                } else {
+                    console.log('🔧 [DISPLAY] No notification settings in config, using defaults:', notificationSettings);
                 }
             } catch (error) {
                 console.error('Error loading notification settings:', error);
             }
+        }
+
+        // Helper function to set container position
+        function setContainerPosition(container, position) {
+            if (!container) return;
+            
+            // Clear any existing position styles
+            container.style.top = '';
+            container.style.bottom = '';
+            container.style.left = '';
+            container.style.right = '';
+            
+            // Apply position based on settings
+            switch (position) {
+                case 'top-right':
+                    container.style.top = '24px';
+                    container.style.right = '24px';
+                    break;
+                case 'top-left':
+                    container.style.top = '24px';
+                    container.style.left = '24px';
+                    break;
+                case 'bottom-right':
+                    container.style.bottom = '24px';
+                    container.style.right = '24px';
+                    break;
+                case 'bottom-left':
+                    container.style.bottom = '24px';
+                    container.style.left = '24px';
+                    break;
+                default:
+                    // Default to top-right if no valid position
+                    container.style.top = '24px';
+                    container.style.right = '24px';
+            }
+            
+            console.log('🎯 [DISPLAY] Container position set to:', position, 'with styles:', {
+                top: container.style.top,
+                bottom: container.style.bottom,
+                left: container.style.left,
+                right: container.style.right
+            });
         }
         
         // Load active alerts from main process
@@ -1118,67 +1172,100 @@
                 const existingPopup = document.querySelector(`[data-code="${data.code}"]`);
                 if (existingPopup) {
                     console.log('⚠️ [DISPLAY] Popup already exists for code:', data.code, 'skipping creation');
-                    return; // Don't create duplicate notifications
-                }
+                return;
+            }
 
-                // Create popup element - ALWAYS RED for new calls
+            // Load notification settings
+            const settings = notificationSettings || {
+                position: 'top-right',
+                animation: 'slide-right',
+                activeColor: 'red',
+                completedColor: 'green',
+                showDuration: 30,
+                animationSpeed: 500
+            };
+
+            // Update container position based on settings
+            container.className = 'fixed z-50 w-80 flex flex-col gap-2 pointer-events-auto';
+            setContainerPosition(container, settings.position);
+
+            // Create popup with active color
                 const popup = document.createElement('div');
-                popup.className = 'notification-popup bg-red-50';
+            popup.className = `notification-popup bg-${settings.activeColor}-50`;
                 popup.setAttribute('data-code', data.code);
-                console.log('🔴 [DISPLAY] Creating RED popup for code:', data.code, 'className:', popup.className);
                 
                 // Clean and format room and bed names
                 const cleanRoom = data.room.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim();
                 const cleanBed = data.bed.replace(/^(Bed|B\.)\s*/i, '').trim();
                 
-                // Create content
+            // Create content with active color
                 popup.innerHTML = `
                     <div class="flex justify-between items-start">
                         <div class="flex-1">
                             <div class="flex items-center">
-                                <h3 class="font-bold text-lg text-red-800">Nurse Call</h3>
-                                <span class="ml-2 px-2 py-0.5 bg-red-100 text-red-800 text-xs font-medium rounded-full">ACTIVE</span>
+                            <h3 class="font-bold text-lg text-${settings.activeColor}-800">Nurse Call</h3>
+                            <span class="ml-2 px-2 py-0.5 bg-${settings.activeColor}-100 text-${settings.activeColor}-800 text-xs font-medium rounded-full">ACTIVE</span>
                             </div>
-                            <p class="text-sm text-red-600 mt-1 font-medium">Ruangan ${cleanRoom}</p>
-                            ${cleanBed ? `<p class="text-xs text-red-600 mt-0.5">Bed ${cleanBed}</p>` : ''}
+                        <p class="text-sm text-${settings.activeColor}-600 mt-1 font-medium">${cleanRoom}</p>
+                        <p class="text-xs text-${settings.activeColor}-600 mt-0.5">${cleanBed}</p>
                         </div>
                         <div class="flex flex-col items-end">
-                            <span class="text-xs text-white px-2 py-1 rounded bg-red-500">${data.time}</span>
-                            <span class="text-xs text-red-500 mt-1">Kode: ${data.code}</span>
+                        <span class="text-xs text-white px-2 py-1 rounded bg-${settings.activeColor}-500">${data.time}</span>
+                        <span class="text-xs text-${settings.activeColor}-500 mt-1">Kode: ${data.code}</span>
                         </div>
                     </div>
                     <div class="mt-3 flex items-center justify-between">
                         <div class="flex items-center">
-                            <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                            <span class="ml-2 text-xs text-red-600 font-medium">Menunggu Respon</span>
+                        <span class="w-2 h-2 bg-${settings.activeColor}-500 rounded-full animate-pulse"></span>
+                        <span class="ml-2 text-xs text-${settings.activeColor}-600 font-medium">Menunggu Response</span>
                         </div>
-                        <button class="text-xs text-white px-3 py-1.5 rounded-full bg-red-500 hover:bg-red-600 transition-colors">
+                    <button class="text-xs text-white px-3 py-1.5 rounded-full bg-${settings.activeColor}-500 hover:bg-${settings.activeColor}-600 transition-colors">
                             <i class="fas fa-bell"></i> Active
                         </button>
                     </div>
                 `;
 
+            // Add animation class based on settings
+            const animationClass = {
+                'slide-right': 'animate-slide-right',
+                'slide-left': 'animate-slide-left',
+                'fade': 'animate-fade',
+                'bounce': 'animate-bounce'
+            }[settings.animation] || 'animate-slide-right';
+
+            popup.style.animationDuration = `${settings.animationSpeed}ms`;
+            popup.classList.add(animationClass);
+
                 // Add to container
                 container.appendChild(popup);
-
-                // Trigger animation
-                requestAnimationFrame(() => {
-                    popup.classList.add('show');
-                });
 
                 // Store reference for reset handling
                 activeNotifications.set(data.code, popup);
             }
 
-            // Function to handle reset notification
+        // Function to handle reset notification with applied settings
             function resetNotification(code) {
                 const popup = activeNotifications.get(code);
                 if (popup) {
                     console.log('🔄 [DISPLAY] Updating notification popup to "completed" for reset code:', code);
                     
-                    // Update status to completed
-                    popup.classList.remove('show', 'bg-red-50');
-                    popup.classList.add('completed', 'bg-green-50');
+                // Load notification settings
+                const settings = notificationSettings || {
+                    position: 'top-right',
+                    animation: 'slide-right',
+                    activeColor: 'red',
+                    completedColor: 'green',
+                    showDuration: 30,
+                    animationSpeed: 500
+                };
+                
+                // Ensure container position is maintained
+                const container = document.getElementById('notification-popup-container');
+                setContainerPosition(container, settings.position);
+
+                // Update status to completed with completed color
+                popup.classList.remove(`bg-${settings.activeColor}-50`);
+                popup.classList.add(`bg-${settings.completedColor}-50`);
                     
                     // Get data for display
                     const data = masterData.find(d => d.charCode === code);
@@ -1187,35 +1274,33 @@
                     const now = new Date();
                     const currentTime = now.toLocaleTimeString('en-US', { hour12: false });
                     
-                    // Update entire content to match the desired format
+                // Update content with completed color
                     popup.innerHTML = `
                         <div class="flex justify-between items-start">
                             <div class="flex-1">
                                 <div class="flex items-center">
-                                    <h3 class="font-bold text-lg text-green-800">Telah Ditangani</h3>
+                                <h3 class="font-bold text-lg text-${settings.completedColor}-800">Telah Ditangani</h3>
                                 </div>
-                                <p class="text-sm text-green-600 mt-1 font-medium">Ruangan ${cleanRoom}</p>
-                                ${cleanBed ? `<p class="text-xs text-green-600 mt-0.5">Bed ${cleanBed}</p>` : ''}
+                            <p class="text-sm text-${settings.completedColor}-600 mt-1 font-medium">${cleanRoom}</p>
+                            <p class="text-xs text-${settings.completedColor}-600 mt-0.5">${cleanBed}</p>
                             </div>
                             <div class="flex flex-col items-end">
-                                <span class="text-xs text-white px-2 py-1 rounded bg-green-500">${currentTime}</span>
-                                <span class="text-xs text-green-500 mt-1">Nurse Call</span>
+                            <span class="text-xs text-white px-2 py-1 rounded bg-${settings.completedColor}-500">${currentTime}</span>
+                            <span class="text-xs text-${settings.completedColor}-500 mt-1">Nurse Call</span>
                             </div>
                         </div>
                         <div class="mt-3 flex items-center justify-between">
                             <div class="flex items-center">
-                                <span class="w-2 h-2 bg-green-500 rounded-full"></span>
-                                <span class="ml-2 text-xs text-green-600 font-medium">Telah di Respon</span>
+                            <span class="w-2 h-2 bg-${settings.completedColor}-500 rounded-full"></span>
+                            <span class="ml-2 text-xs text-${settings.completedColor}-600 font-medium">Telah di Respon</span>
                             </div>
-                            <button class="text-xs text-white px-3 py-1.5 rounded-full bg-green-500 transition-colors">
+                        <button class="text-xs text-white px-3 py-1.5 rounded-full bg-${settings.completedColor}-500 transition-colors">
                                 <i class="fas fa-check"></i> Selesai
                             </button>
                         </div>
                     `;
 
-                    console.log('✅ [DISPLAY] Notification popup updated to "Telah Ditangani" format for code:', code);
-
-                    // Remove after delay
+                // Remove after configured duration
                     setTimeout(() => {
                         popup.classList.add('hide');
                         setTimeout(() => {
@@ -1224,8 +1309,8 @@
                                 activeNotifications.delete(code);
                                 console.log('🗑️ [DISPLAY] Notification popup removed after completed state for code:', code);
                             }
-                        }, 500);
-                    }, 5000); // Show "Telah Ditangani" state for 5 seconds
+                    }, settings.animationSpeed);
+                }, settings.showDuration * 1000);
                 }
             }
 
@@ -1235,6 +1320,12 @@
             // Function to update notification popups berdasarkan active alerts
             function updateNotificationPopups() {
                 console.log('🔄 [DISPLAY] Updating notification popups, active alerts:', activeAlerts.length);
+                
+                // Ensure container position is set correctly
+                const container = document.getElementById('notification-popup-container');
+                if (container) {
+                    setContainerPosition(container, notificationSettings.position);
+                }
                 
                 // Debug: Log semua alerts dengan status mereka
                 activeAlerts.forEach(alert => {
@@ -1360,14 +1451,8 @@
                     setStandbyIndicator('yellow');
                 }, 500);
                 
-                // Tampilkan notifikasi HANYA jika sebelumnya tidak dalam standby mode
-                if (!wasInStandby) {
-                    showNotification('warning', 'Mode Standby Aktif');
-                    lastStandbyNotification = Date.now();
-                    console.log('Entered standby mode - notification shown');
-                } else {
-                    console.log('Already in standby mode - no notification');
-                }
+                // Hanya update indikator tanpa notifikasi
+                console.log('Entered standby mode - indicator updated');
                 return;
             }
 
@@ -1377,10 +1462,8 @@
                 standbyMode = false;
                 updateConnectionStatus();
                 
-                if (wasInStandby) {
-                    showNotification('info', 'Sistem keluar dari mode standby');
-                    console.log('Exited standby mode');
-                }
+                // Hanya update indikator tanpa notifikasi
+                console.log('Exited standby mode - indicator updated');
                 
                 // Reset standby notification state
                 lastStandbyNotification = null;
@@ -1551,7 +1634,7 @@
                 
                 // Tampilkan notifikasi OS untuk alert baru - ENHANCED FORMAT
                 showEnhancedOSNotification(code, 'call');
-                
+
                 // Play sounds dan simpan ke persistent
                 const sounds = [];
                 if (data.v1) sounds.push(data.v1);
@@ -1560,7 +1643,7 @@
                 if (data.v4) sounds.push(data.v4);
                 if (data.v5) sounds.push(data.v5);
                 if (data.v6) sounds.push(data.v6);
-                
+
                 if (sounds.length > 0) {
                     // Gunakan global audio player di main process
                     console.log('Requesting persistent sound playback for code:', code);
@@ -1683,6 +1766,13 @@
         // Listen for notification settings updates
         ipcRenderer.on('notification-settings-updated', async () => {
             await loadNotificationSettings();
+            
+            // Update container position immediately after settings are loaded
+            const container = document.getElementById('notification-popup-container');
+            if (container) {
+                setContainerPosition(container, notificationSettings.position);
+                console.log('🎯 [DISPLAY] Container position updated after settings change');
+            }
         });
 
         // Test functions untuk debugging (opsional)

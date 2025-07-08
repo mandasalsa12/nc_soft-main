@@ -367,7 +367,7 @@ ipcMain.on('persistent-audio-ended', (event, { code, currentIndex }) => {
                 currentAudioSequence.loopCount++;
             }
             
-            console.log(`🔄 Completed loop ${currentAudioSequence.loopCount} for code: ${code} - waiting 5 seconds before next loop`);
+            console.log(`🔄 Completed loop ${currentAudioSequence.loopCount} for code: ${code} - waiting 3 seconds before next loop`);
             
             // Clear any existing delay timeout
             if (loopDelayTimeout) {
@@ -384,7 +384,7 @@ ipcMain.on('persistent-audio-ended', (event, { code, currentIndex }) => {
                     console.log(`⏹️ Audio sequence stopped during delay for code: ${code}`);
                 }
                 loopDelayTimeout = null;
-            }, 5000); // 5 second delay
+            }, 3000); // 3 second delay
         } else {
             // Continue to next sound in current sequence
             console.log(`▶️ Playing sound ${currentAudioSequence.currentIndex}/${currentAudioSequence.sounds.length} for code: ${code}`);
