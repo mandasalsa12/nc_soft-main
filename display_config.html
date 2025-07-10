@@ -1260,43 +1260,68 @@
 
         // Serial data: blink shape dengan sistem yang lebih canggih
         ipcRenderer.on('serial-data', (event, code) => {
-            console.log('📡 [DISPLAY] Received serial data:', code);
+            console.log('📡 [DISPLAY_CONFIG] Received serial data:', code);
             
             // Process call menggunakan fungsi yang sudah ada (ini sudah handle semua kode)
             processCall(code);
             
-            // Handle kode reset untuk shape blinking (tidak duplikasi dengan processCall)
+            // Handle kode panggilan untuk shape blinking - DIRECT BLINKING START
+            if (code.startsWith('10')) {
+                const targetShape = shapes.find(s => s.code === code);
+                if (targetShape) {
+                    console.log('🔄 [DISPLAY_CONFIG] Starting blink for shape:', targetShape.code, targetShape.type);
+                    targetShape.blinking = true;
+                    
+                    // Clear interval lama jika ada
+                    if (blinkingShapes.has(code)) {
+                        blinkingShapes.delete(code);
+                    }
+                    
+                    // Tandai bahwa shape ini sedang blinking
+                    blinkingShapes.set(code, true);
+                    
+                    // Simpan ke persistent blinking
+                    persistentBlinking.set(code, true);
+                    console.log('✅ [DISPLAY_CONFIG] Added to persistent blinking:', code);
+                    
+                    // Update ke main process
+                    updatePersistentStateToMain();
+                    
+                    // Start render loop untuk animasi yang smooth
+                    if (!animationFrameId) {
+                        console.log('🎬 [DISPLAY_CONFIG] Starting animation loop');
+                        renderShapes();
+                    }
+                } else {
+                    console.warn('⚠️ [DISPLAY_CONFIG] Shape not found for code:', code);
+                    console.log('🔍 [DISPLAY_CONFIG] Available shapes:', shapes.map(s => ({ code: s.code, type: s.type })));
+                }
+            }
+            
+            // Handle kode reset untuk shape blinking - DIRECT BLINKING STOP
             if (code.startsWith('90')) {
                 const targetCode = '10' + code.substring(2);
-                console.log('Reset signal for shape blinking:', targetCode);
+                console.log('🔄 [DISPLAY_CONFIG] Reset signal for shape blinking:', targetCode);
                 
                 // Stop blinking untuk shape yang sesuai
-                shapes.forEach(s => {
-                    if (s.code === targetCode) {
-                        s.blinking = false;
-                        console.log('Stopped blinking for shape:', s.code, s.type);
-                    }
-                });
+                const targetShape = shapes.find(s => s.code === targetCode);
+                if (targetShape) {
+                    targetShape.blinking = false;
+                    console.log('🛑 [DISPLAY_CONFIG] Stopped blinking for shape:', targetShape.code, targetShape.type);
+                } else {
+                    console.warn('⚠️ [DISPLAY_CONFIG] Shape not found for reset:', targetCode);
+                }
                 
                 // Remove dari tracking blinking shapes
                 if (blinkingShapes.has(targetCode)) {
                     blinkingShapes.delete(targetCode);
+                    console.log('🗑️ [DISPLAY_CONFIG] Removed from blinkingShapes:', targetCode);
                 }
-                
-                // Stop persistent sounds di main process
-                console.log('Requesting stop persistent sound for code:', targetCode);
-                ipcRenderer.invoke('stop-persistent-sounds', { code: targetCode }).then(result => {
-                    if (result.success) {
-                        console.log('Persistent sound stopped for code:', targetCode);
-                    } else {
-                        console.error('Failed to stop persistent sound:', result.error);
-                    }
-                });
                 
                 // Remove dari persistent blinking
                 if (persistentBlinking.has(targetCode)) {
                     persistentBlinking.delete(targetCode);
-                    console.log('Removed from persistent blinking:', targetCode);
+                    console.log('🗑️ [DISPLAY_CONFIG] Removed from persistent blinking:', targetCode);
                 }
                 
                 // Update ke main process
@@ -1304,38 +1329,6 @@
                 
                 // Render ulang untuk menampilkan perubahan
                 renderShapes();
-                return;
-            }
-            
-            // Handle kode panggilan untuk shape blinking (tidak duplikasi dengan processCall)
-            if (code.startsWith('10')) {
-                shapes.forEach(s => {
-                    if (s.code === code) {
-                        console.log('Starting blink for shape:', s.code, s.type);
-                        s.blinking = true;
-                        
-                        // Clear interval lama jika ada
-                        if (blinkingShapes.has(code)) {
-                            clearInterval(blinkingShapes.get(code));
-                            blinkingShapes.delete(code);
-                        }
-                        
-                        // Tandai bahwa shape ini sedang blinking
-                        blinkingShapes.set(code, true);
-                        
-                        // Simpan ke persistent blinking
-                        persistentBlinking.set(code, true);
-                        console.log('Added to persistent blinking:', code);
-                        
-                        // Update ke main process
-                        updatePersistentStateToMain();
-                        
-                        // Start render loop untuk animasi yang smooth
-                        if (!animationFrameId) {
-                            renderShapes();
-                        }
-                    }
-                });
             }
         });
 
@@ -1423,34 +1416,31 @@
 
         // Listen for persistent audio playback commands
         ipcRenderer.on('play-persistent-audio', (event, { code, soundFile, currentIndex, totalSounds }) => {
-            console.log('Received persistent audio command in display_config.html:', { code, soundFile, currentIndex, totalSounds });
+            console.log('🔊 [DISPLAY_CONFIG] Received persistent audio command:', { code, soundFile, currentIndex, totalSounds });
             
             // Ensure global audio element exists
             const audioElement = ensureGlobalAudioElement();
             
-            // Stop current audio if playing different sound
-            if (audioElement.src && !audioElement.src.includes(soundFile)) {
-                audioElement.pause();
-                audioElement.currentTime = 0;
-            }
-            
-            // Store metadata
+            // Store metadata FIRST before any audio operations
             audioElement.dataset.currentCode = code;
             audioElement.dataset.currentIndex = currentIndex.toString();
             
             // Set the audio source
             const newSrc = `sounds/${soundFile}`;
-            if (audioElement.src !== newSrc) {
+            
+            // Only change source if different to avoid interruption
+            if (!audioElement.src.includes(soundFile)) {
                 audioElement.src = newSrc;
-                console.log('Set global audio source to:', audioElement.src);
+                console.log('🎵 [DISPLAY_CONFIG] Set audio source to:', audioElement.src);
             }
             
-            // Play audio immediately if can play through
+            // Play audio immediately if ready, otherwise wait for ready state
             const playAudio = () => {
                 audioElement.play().then(() => {
-                    console.log('Global audio started successfully in display_config.html');
+                    console.log('🎵 [DISPLAY_CONFIG] Audio started successfully for code:', code, 'sound:', soundFile);
                 }).catch(error => {
-                    console.error('Failed to play global audio in display_config.html:', error);
+                    console.error('❌ [DISPLAY_CONFIG] Failed to play audio:', error);
+                    // Notify main process of failure
                     ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                 });
             };
@@ -1459,40 +1449,113 @@
                 playAudio();
             } else {
                 audioElement.addEventListener('canplaythrough', playAudio, { once: true });
-                audioElement.addEventListener('loadeddata', () => {
-                    console.log('Audio data loaded in display_config.html');
+                audioElement.addEventListener('error', () => {
+                    console.error('❌ [DISPLAY_CONFIG] Audio load error for:', soundFile);
+                    ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                 }, { once: true });
             }
         });
 
         // Listen for stop persistent audio commands
         ipcRenderer.on('stop-persistent-audio', () => {
-            console.log('Received stop persistent audio command in display.html');
+            console.log('🛑 [DISPLAY_CONFIG] Received stop persistent audio command');
             if (globalAudioElement) {
                 globalAudioElement.pause();
                 globalAudioElement.currentTime = 0;
                 globalAudioElement.dataset.currentCode = '';
                 globalAudioElement.dataset.currentIndex = '';
-                console.log('Stopped global persistent audio in display.html');
+                console.log('🛑 [DISPLAY_CONFIG] Stopped global persistent audio');
+            }
+        });
+
+        // Listen for persistent sound stopped events
+        ipcRenderer.on('persistent-sound-stopped', (event, { code }) => {
+            console.log('🛑 [DISPLAY_CONFIG] Persistent sound stopped for code:', code);
+            
+            // Stop audio if it matches the code
+            if (globalAudioElement && globalAudioElement.dataset.currentCode === code) {
+                globalAudioElement.pause();
+                globalAudioElement.currentTime = 0;
+                globalAudioElement.dataset.currentCode = '';
+                globalAudioElement.dataset.currentIndex = '';
+                console.log('🛑 [DISPLAY_CONFIG] Stopped audio for specific code:', code);
+            }
+            
+            // Stop blinking for the corresponding shape
+            const shape = shapes.find(s => s.code === code);
+            if (shape && shape.blinking) {
+                shape.blinking = false;
+                blinkingShapes.delete(code);
+                persistentBlinking.delete(code);
+                console.log('🛑 [DISPLAY_CONFIG] Stopped blinking for shape:', code);
+                
+                // Trigger render to show changes
+                renderShapes();
+            }
+            
+            // Remove from local persistent tracking
+            if (persistentSounds.has(code)) {
+                persistentSounds.delete(code);
+                console.log('🗑️ [DISPLAY_CONFIG] Removed from persistent sounds:', code);
             }
         });
 
         // Listener untuk menerima update call history dari main process (dari index.html)
         ipcRenderer.on('call-history-updated', (event, data) => {
-            console.log('Received call history update from main process in display.html:', data);
+            console.log('🔄 [DISPLAY_CONFIG] Received call history update from main process:', data);
             
             if (data.callHistory) {
                 callHistory = data.callHistory;
             }
             
             if (data.activeAlerts) {
+                const previousActiveAlerts = [...activeAlerts];
                 activeAlerts = data.activeAlerts;
+                console.log('⚠️ [DISPLAY_CONFIG] Active alerts updated:', activeAlerts.length, 'alerts');
+                console.log('📋 [DISPLAY_CONFIG] Current active alerts statuses:', activeAlerts.map(a => ({ code: a.code, status: a.status })));
+                
+                // ONLY trigger blinking for NEW active alerts (not completed ones)
+                activeAlerts.forEach(alert => {
+                    if (alert.status === 'active') {
+                        const wasAlreadyActive = previousActiveAlerts.find(prev => prev.code === alert.code && prev.status === 'active');
+                        if (!wasAlreadyActive) {
+                            console.log('🔔 [DISPLAY_CONFIG] New active alert detected:', alert.code, '- triggering blinking');
+                            
+                            // Find and start blinking for the shape
+                            const shape = shapes.find(s => s.code === alert.code);
+                            if (shape) {
+                                console.log('✅ [DISPLAY_CONFIG] Found shape for code:', alert.code, '- starting blinking');
+                                shape.blinking = true;
+                                blinkingShapes.set(alert.code, true);
+                                persistentBlinking.set(alert.code, true);
+                                
+                                // Start animation if not already running
+                                if (!animationFrameId) {
+                                    console.log('🎬 [DISPLAY_CONFIG] Starting animation loop for new blinking shape');
+                                    renderShapes();
+                                }
+                            } else {
+                                console.warn('⚠️ [DISPLAY_CONFIG] Shape not found for new alert code:', alert.code);
+                                console.log('🔍 [DISPLAY_CONFIG] Available shapes:', shapes.map(s => ({ code: s.code, type: s.type })));
+                            }
+                        }
+                    } else if (alert.status === 'completed') {
+                        // Stop blinking for completed alerts
+                        const shape = shapes.find(s => s.code === alert.code);
+                        if (shape && shape.blinking) {
+                            console.log('🛑 [DISPLAY_CONFIG] Stopping blinking for completed alert:', alert.code);
+                            shape.blinking = false;
+                            blinkingShapes.delete(alert.code);
+                            persistentBlinking.delete(alert.code);
+                        }
+                    }
+                });
             }
             
             // Restore persistent sounds dan blinking
             if (data.persistentSounds) {
                 persistentSounds = new Map(data.persistentSounds);
-                console.log('Restored persistent sounds:', persistentSounds.size, 'sounds');
+                console.log('🔊 [DISPLAY_CONFIG] Restored persistent sounds:', persistentSounds.size, 'sounds');
                 
                 // Resume sounds yang masih aktif
                 persistentSounds.forEach((soundData, code) => {
@@ -1503,29 +1566,46 @@
                 });
             }
             
+            // Sync blinking state ONLY for truly active persistent blinking (not completed)
             if (data.persistentBlinking) {
-                persistentBlinking = new Map(data.persistentBlinking);
-                console.log('Restored persistent blinking:', persistentBlinking.size, 'shapes');
+                const newPersistentBlinking = new Map(data.persistentBlinking);
+                console.log('🔄 [DISPLAY_CONFIG] Syncing persistent blinking from main:', newPersistentBlinking.size, 'entries');
                 
-                // Resume blinking yang masih aktif
-                persistentBlinking.forEach((isActive, code) => {
-                    if (isActive) {
-                        const shape = shapes.find(s => s.code === code);
-                        if (shape) {
+                // Apply blinking state berdasarkan persistent data AND alert status
+                newPersistentBlinking.forEach((isActive, code) => {
+                    const shape = shapes.find(s => s.code === code);
+                    if (shape && isActive) {
+                        // ONLY start blinking if there's actually an ACTIVE alert for this code
+                        const hasActiveAlert = activeAlerts.some(alert => alert.code === code && alert.status === 'active');
+                        
+                        if (hasActiveAlert) {
                             shape.blinking = true;
                             blinkingShapes.set(code, true);
-                            console.log('Resumed blinking for shape:', code);
+                            persistentBlinking.set(code, true);
+                            console.log('🔄 [DISPLAY_CONFIG] Synced blinking for ACTIVE alert:', code);
+                        } else {
+                            console.log('🚫 [DISPLAY_CONFIG] Skipping blinking for completed/non-active alert:', code);
+                            shape.blinking = false;
+                            blinkingShapes.delete(code);
+                            persistentBlinking.delete(code);
                         }
+                    } else if (shape && !isActive) {
+                        shape.blinking = false;
+                        blinkingShapes.delete(code);
+                        persistentBlinking.delete(code);
+                        console.log('🛑 [DISPLAY_CONFIG] Stopped blinking for inactive persistent code:', code);
                     }
                 });
                 
-                // Start render loop jika ada blinking
-                if (persistentBlinking.size > 0 && !animationFrameId) {
+                // Start render loop jika ada blinking yang ACTIVE
+                const hasActiveBlinking = Array.from(blinkingShapes.values()).some(isBlinking => isBlinking);
+                if (hasActiveBlinking && !animationFrameId) {
+                    console.log('🎬 [DISPLAY_CONFIG] Starting render loop for active blinking');
                     renderShapes();
                 }
             }
             
-            console.log('Call history updated from external source in display.html:', callHistory.length, 'entries');
+            console.log('📝 [DISPLAY_CONFIG] Call history updated from external source:', callHistory.length, 'entries');
         });
 
         // Update standby indicator
@@ -2444,10 +2524,23 @@
                     callHistory = data.callHistory || [];
                     activeAlerts = data.activeAlerts || [];
                     
+                    console.log('🔄 [DISPLAY_CONFIG] Loaded from main process:', {
+                        callHistoryCount: callHistory.length,
+                        activeAlertsCount: activeAlerts.length
+                    });
+                    
+                    // DEBUG: Log status of all alerts loaded
+                    if (activeAlerts.length > 0) {
+                        console.log('📋 [DISPLAY_CONFIG] Alert statuses on load:');
+                        activeAlerts.forEach(alert => {
+                            console.log(`  - ${alert.code}: ${alert.status}`);
+                        });
+                    }
+                    
                     // Restore persistent sounds dan blinking
                     if (data.persistentSounds) {
                         persistentSounds = new Map(data.persistentSounds);
-                        console.log('Loaded persistent sounds from main process:', persistentSounds.size, 'sounds');
+                        console.log('🔊 [DISPLAY_CONFIG] Loaded persistent sounds from main process:', persistentSounds.size, 'sounds');
                         
                         // Resume sounds yang masih aktif
                         persistentSounds.forEach((soundData, code) => {
@@ -2459,31 +2552,44 @@
                     }
                     
                     if (data.persistentBlinking) {
-                        persistentBlinking = new Map(data.persistentBlinking);
-                        console.log('Loaded persistent blinking from main process:', persistentBlinking.size, 'shapes');
+                        const loadedPersistentBlinking = new Map(data.persistentBlinking);
+                        console.log('🔄 [DISPLAY_CONFIG] Loaded persistent blinking from main process:', loadedPersistentBlinking.size, 'shapes');
                         
-                        // Resume blinking yang masih aktif
-                        persistentBlinking.forEach((isActive, code) => {
+                        // Apply blinking ONLY for ACTIVE alerts
+                        console.log('🔄 [DISPLAY_CONFIG] Applying persistent blinking to shapes (ACTIVE ONLY)...');
+                        loadedPersistentBlinking.forEach((isActive, code) => {
                             if (isActive) {
-                                const shape = shapes.find(s => s.code === code);
-                                if (shape) {
-                                    shape.blinking = true;
-                                    blinkingShapes.set(code, true);
-                                    console.log('Resumed blinking for shape:', code);
+                                // CRITICAL: Only apply blinking if there's an ACTIVE alert
+                                const activeAlert = activeAlerts.find(alert => alert.code === code && alert.status === 'active');
+                                
+                                if (activeAlert) {
+                                    const shape = shapes.find(s => s.code === code);
+                                    if (shape) {
+                                        console.log('✅ [DISPLAY_CONFIG] Applied blinking to shape for ACTIVE alert:', code);
+                                        shape.blinking = true;
+                                        blinkingShapes.set(code, true);
+                                        persistentBlinking.set(code, true);
+                                    } else {
+                                        console.warn('⚠️ [DISPLAY_CONFIG] Shape not found for persistent blinking code:', code);
+                                    }
+                                } else {
+                                    console.log('🚫 [DISPLAY_CONFIG] Skipping blinking for completed/non-active persistent code:', code);
                                 }
                             }
                         });
                         
-                        // Start render loop jika ada blinking
-                        if (persistentBlinking.size > 0 && !animationFrameId) {
+                        // Start render loop if needed (only if there are actually active blinking shapes)
+                        const activeBlinkingCount = Array.from(blinkingShapes.values()).filter(Boolean).length;
+                        if (activeBlinkingCount > 0 && !animationFrameId) {
+                            console.log('🎬 [DISPLAY_CONFIG] Starting render loop for', activeBlinkingCount, 'active blinking shapes');
                             renderShapes();
                         }
                     }
                     
-                    console.log('Call history loaded from main process:', callHistory.length, 'entries');
+                    console.log('📝 [DISPLAY_CONFIG] Call history loaded from main process:', callHistory.length, 'entries');
                 }
             } catch (error) {
-                console.error('Error loading call history from main process:', error);
+                console.error('❌ [DISPLAY_CONFIG] Error loading call history from main process:', error);
             }
         }
 

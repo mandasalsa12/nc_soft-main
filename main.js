@@ -379,7 +379,7 @@ ipcMain.on('persistent-audio-ended', (event, { code, currentIndex }) => {
                 // Check if still should be playing (not reset)
                 if (isAudioPlaying && currentAudioSequence && currentAudioSequence.code === code) {
                     console.log(`🔁 Starting loop ${currentAudioSequence.loopCount + 1} for code: ${code}`);
-                    sendAudioToMainWindow();
+                    sendAudioToAllWindows();
                 } else {
                     console.log(`⏹️ Audio sequence stopped during delay for code: ${code}`);
                 }
@@ -388,7 +388,7 @@ ipcMain.on('persistent-audio-ended', (event, { code, currentIndex }) => {
         } else {
             // Continue to next sound in current sequence
             console.log(`▶️ Playing sound ${currentAudioSequence.currentIndex}/${currentAudioSequence.sounds.length} for code: ${code}`);
-            sendAudioToMainWindow();
+            sendAudioToAllWindows();
         }
     }
 });
@@ -709,10 +709,16 @@ ipcMain.handle('play-persistent-sounds', async (event, { code, sounds }) => {
     try {
         console.log('Starting persistent looping audio sequence for code:', code, 'with', sounds.length, 'sounds');
         
-        // Stop existing sound jika ada
-        if (isAudioPlaying) {
-            console.log('Stopping existing audio sequence');
+        // Stop existing sound jika ada YANG BERBEDA CODE
+        if (isAudioPlaying && currentAudioSequence && currentAudioSequence.code !== code) {
+            console.log('Stopping existing audio sequence for different code');
             stopCurrentAudio();
+        }
+        
+        // Jika sudah ada audio untuk code yang sama dan masih playing, skip
+        if (isAudioPlaying && currentAudioSequence && currentAudioSequence.code === code) {
+            console.log('Audio for code', code, 'is already playing, continuing...');
+            return { success: true, message: 'Already playing' };
         }
         
         // Set persistent sound state
@@ -724,15 +730,15 @@ ipcMain.handle('play-persistent-sounds', async (event, { code, sounds }) => {
             isLooping: true // Flag untuk menandakan ini adalah looping sequence
         });
         
-        // Start audio sequence - akan loop terus dengan delay 5 detik antar loop
-        currentAudioSequence = { code, sounds, currentIndex: 0 };
+        // Start audio sequence - akan loop terus dengan delay 3 detik antar loop
+        currentAudioSequence = { code, sounds, currentIndex: 0, loopCount: 1 };
         isAudioPlaying = true;
         
-        // Send audio command directly to main window
-        sendAudioToMainWindow();
+        // Send audio command directly to all windows
+        sendAudioToAllWindows();
         
         console.log(`🚀 Audio looping sequence started for code: ${code}`);
-        console.log(`📝 Sequence details: ${sounds.length} sounds, will loop continuously with 5-second delay between loops`);
+        console.log(`📝 Sequence details: ${sounds.length} sounds, will loop continuously with 3-second delay between loops`);
         console.log(`🛑 To stop this sequence, send reset code: 90${code.substring(2)}`);
         return { success: true };
     } catch (error) {
@@ -755,13 +761,21 @@ ipcMain.handle('stop-persistent-sounds', async (event, { code }) => {
             persistentSounds.delete(code);
         }
         
-        // Stop audio and clear any pending timeouts
-        stopCurrentAudio();
+        // Stop audio ONLY if it matches the code
+        if (currentAudioSequence && currentAudioSequence.code === code) {
+            stopCurrentAudio();
+        } else {
+            console.log(`Audio sequence code mismatch: current=${currentAudioSequence?.code}, requested=${code}`);
+        }
+        
+        // CRITICAL: Also clear currentlyPlayingAudio if it matches the code being stopped
+        if (currentlyPlayingAudio && currentlyPlayingAudio.code === code) {
+            console.log(`🗑️ Clearing currentlyPlayingAudio for stopped code: ${code}`);
+            currentlyPlayingAudio = null;
+        }
         
         // Broadcast update ke semua window
-        if (mainWindow) {
-            mainWindow.webContents.send('persistent-sound-stopped', { code });
-        }
+        broadcastToAllWindows('persistent-sound-stopped', { code });
         
         console.log(`✅ Successfully stopped looping audio for code: ${code}`);
         return { success: true };
@@ -771,8 +785,8 @@ ipcMain.handle('stop-persistent-sounds', async (event, { code }) => {
     }
 });
 
-// Function to send audio command to main window
-function sendAudioToMainWindow() {
+// Function to send audio command to all windows - ENHANCED VERSION
+function sendAudioToAllWindows() {
     if (!currentAudioSequence || !isAudioPlaying) {
         return;
     }
@@ -790,56 +804,68 @@ function sendAudioToMainWindow() {
     const fullPath = path.join(soundPath, soundFile);
     
     const currentLoop = currentAudioSequence.loopCount || 1;
-    console.log(`🔊 Sending audio command - Code: ${code}, Sound: ${soundFile} (${currentIndex + 1}/${sounds.length}), Loop: ${currentLoop}`);
+    console.log(`🔊 Sending audio command to all windows - Code: ${code}, Sound: ${soundFile} (${currentIndex + 1}/${sounds.length}), Loop: ${currentLoop}`);
     
     // Check if file exists
     if (!fs.existsSync(fullPath)) {
         console.error('Audio file not found:', fullPath);
         // Skip to next sound
         currentAudioSequence.currentIndex = currentIndex + 1;
-        sendAudioToMainWindow();
+        sendAudioToAllWindows();
         return;
     }
     
-    // Send audio command to main window - IMPROVED: Kirim ke semua window yang ada
+    const audioCommand = { 
+        code, 
+        soundFile,
+        currentIndex,
+        totalSounds: sounds.length,
+        fullPath: fullPath
+    };
+    
+    // Send to all windows
+    broadcastToAllWindows('play-persistent-audio', audioCommand);
+}
+
+// Function to broadcast to all windows
+function broadcastToAllWindows(eventName, data) {
     const windows = BrowserWindow.getAllWindows();
-    windows.forEach(window => {
+    windows.forEach((window, index) => {
         if (window && window.webContents && !window.isDestroyed()) {
             try {
-                console.log('Sending play-persistent-audio command to window');
-                window.webContents.send('play-persistent-audio', { 
-                    code, 
-                    soundFile,
-                    currentIndex,
-                    totalSounds: sounds.length
-                });
+                console.log(`📡 Broadcasting '${eventName}' to window ${index + 1}`);
+                window.webContents.send(eventName, data);
             } catch (error) {
-                console.error('Error sending audio command to window:', error);
+                console.error(`❌ Error broadcasting to window ${index + 1}:`, error);
             }
         }
     });
     
-    // Fallback: Also try main window specifically
+    // Also ensure main window gets the message
     if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
         try {
-            console.log('Sending play-persistent-audio command to main window specifically');
-            mainWindow.webContents.send('play-persistent-audio', { 
-                code, 
-                soundFile,
-                currentIndex,
-                totalSounds: sounds.length
-            });
+            console.log(`📡 Broadcasting '${eventName}' to main window (fallback)`);
+            mainWindow.webContents.send(eventName, data);
         } catch (error) {
-            console.error('Error sending audio command to main window:', error);
+            console.error('❌ Error broadcasting to main window:', error);
         }
     }
 }
 
-// Function to stop current audio
+// Function to send audio command to main window - DEPRECATED, use sendAudioToAllWindows
+function sendAudioToMainWindow() {
+    sendAudioToAllWindows();
+}
+
+// Function to stop current audio - ENHANCED VERSION
 function stopCurrentAudio() {
-    console.log('Stopping current audio sequence and any pending loops');
+    console.log('🛑 Stopping current audio sequence and any pending loops');
     isAudioPlaying = false;
     currentAudioSequence = null;
+    
+    // CRITICAL: Clear currentlyPlayingAudio to prevent restoration of stopped audio
+    currentlyPlayingAudio = null;
+    console.log('🗑️ Cleared currentlyPlayingAudio to prevent restoration after stop');
     
     // Clear global audio player timeout
     if (globalAudioPlayer) {
@@ -854,28 +880,8 @@ function stopCurrentAudio() {
         console.log('Cleared pending loop delay timeout');
     }
     
-    // Send stop command to all windows - IMPROVED: Kirim ke semua window
-    const windows = BrowserWindow.getAllWindows();
-    windows.forEach(window => {
-        if (window && window.webContents && !window.isDestroyed()) {
-            try {
-                console.log('Sending stop-persistent-audio command to window');
-                window.webContents.send('stop-persistent-audio');
-            } catch (error) {
-                console.error('Error sending stop audio command to window:', error);
-            }
-        }
-    });
-    
-    // Fallback: Also try main window specifically
-    if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-        try {
-            console.log('Sending stop-persistent-audio command to main window specifically');
-            mainWindow.webContents.send('stop-persistent-audio');
-        } catch (error) {
-            console.error('Error sending stop audio command to main window:', error);
-        }
-    }
+    // Send stop command to all windows
+    broadcastToAllWindows('stop-persistent-audio', {});
 }
 
 // Handler untuk callback dari renderer ketika audio selesai
@@ -888,7 +894,7 @@ ipcMain.handle('audio-ended', async (event, { code, currentIndex }) => {
             currentAudioSequence.currentIndex = currentIndex + 1;
             
             // Continue to next sound
-            sendAudioToSharedWindow();
+            sendAudioToAllWindows();
         }
         
         return { success: true };
@@ -948,22 +954,37 @@ ipcMain.handle('restore-audio-after-navigation', async () => {
             return { success: true, restored: true, status: 'actively_playing' };
         }
         
-        // Jika ada audio yang tersimpan untuk di-restore
+        // CRITICAL: Jika ada audio yang tersimpan untuk di-restore, VALIDASI dulu
         if (currentlyPlayingAudio && !isAudioPlaying) {
-            console.log('[Audio] Restoring saved audio sequence:', currentlyPlayingAudio);
+            console.log('[Audio] Found saved audio, validating if it should be restored...');
             
-            // Restore audio sequence
-            currentAudioSequence = { ...currentlyPlayingAudio };
-            delete currentAudioSequence.timestamp;
-            isAudioPlaying = true;
+            // Cek apakah audio code masih ada di persistent sounds (belum di-reset)
+            const audioCode = currentlyPlayingAudio.code;
+            const stillPersistent = persistentSounds.has(audioCode);
             
-            // Continue playing from current position
-            sendAudioToMainWindow();
+            console.log(`[Audio] Audio validation - Code: ${audioCode}, Still persistent: ${stillPersistent}`);
             
-            // Clear the saved state since we've restored it
-            currentlyPlayingAudio = null;
-            
-            return { success: true, restored: true, status: 'restored_from_saved' };
+            if (stillPersistent) {
+                console.log('[Audio] Audio is still valid, restoring saved audio sequence:', currentlyPlayingAudio);
+                
+                // Restore audio sequence
+                currentAudioSequence = { ...currentlyPlayingAudio };
+                delete currentAudioSequence.timestamp;
+                isAudioPlaying = true;
+                
+                // Continue playing from current position
+                sendAudioToAllWindows();
+                
+                // Clear the saved state since we've restored it
+                currentlyPlayingAudio = null;
+                
+                return { success: true, restored: true, status: 'restored_from_saved' };
+            } else {
+                console.log('[Audio] Audio code no longer persistent (was reset), clearing saved state');
+                // Clear saved state since audio was reset
+                currentlyPlayingAudio = null;
+                return { success: true, restored: false, status: 'audio_was_reset' };
+            }
         }
         
         console.log('[Audio] No audio to restore');
@@ -1020,7 +1041,7 @@ ipcMain.handle('audio-element-ready', async () => {
             currentAudioSequence = { ...currentlyPlayingAudio };
             delete currentAudioSequence.timestamp;
             isAudioPlaying = true;
-            sendAudioToMainWindow();
+            sendAudioToAllWindows();
             
             // Clear the saved state
             currentlyPlayingAudio = null;
@@ -1367,4 +1388,5 @@ ipcMain.handle('exit-application', async () => {
         return false;
     }
 });
+
 

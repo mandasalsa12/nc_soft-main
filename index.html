@@ -1486,34 +1486,31 @@
 
             // Listen for persistent audio playback commands
             ipcRenderer.on('play-persistent-audio', (event, { code, soundFile, currentIndex, totalSounds }) => {
-                console.log('Received persistent audio command in index.html:', { code, soundFile, currentIndex, totalSounds });
+                console.log('🔊 [INDEX] Received persistent audio command:', { code, soundFile, currentIndex, totalSounds });
                 
                 // Ensure global audio element exists
                 const audioElement = ensureGlobalAudioElement();
                 
-                // Stop current audio if playing different sound
-                if (audioElement.src && !audioElement.src.includes(soundFile)) {
-                    audioElement.pause();
-                    audioElement.currentTime = 0;
-                }
-                
-                // Store metadata
+                // Store metadata FIRST before any audio operations
                 audioElement.dataset.currentCode = code;
                 audioElement.dataset.currentIndex = currentIndex.toString();
                 
                 // Set the audio source
                 const newSrc = `sounds/${soundFile}`;
-                if (audioElement.src !== newSrc) {
+                
+                // Only change source if different to avoid interruption
+                if (!audioElement.src.includes(soundFile)) {
                     audioElement.src = newSrc;
-                    console.log('Set global audio source in index.html to:', audioElement.src);
+                    console.log('🎵 [INDEX] Set audio source to:', audioElement.src);
                 }
                 
-                // Play audio immediately if can play through
+                // Play audio immediately if ready, otherwise wait for ready state
                 const playAudio = () => {
                     audioElement.play().then(() => {
-                        console.log('Global audio started successfully in index.html');
+                        console.log('🎵 [INDEX] Audio started successfully for code:', code, 'sound:', soundFile);
                     }).catch(error => {
-                        console.error('Failed to play global audio in index.html:', error);
+                        console.error('❌ [INDEX] Failed to play audio:', error);
+                        // Notify main process of failure
                         ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                     });
                 };
@@ -1522,21 +1519,42 @@
                     playAudio();
                 } else {
                     audioElement.addEventListener('canplaythrough', playAudio, { once: true });
-                    audioElement.addEventListener('loadeddata', () => {
-                        console.log('Audio data loaded in index.html');
+                    audioElement.addEventListener('error', () => {
+                        console.error('❌ [INDEX] Audio load error for:', soundFile);
+                        ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                     }, { once: true });
                 }
             });
 
             // Listen for stop persistent audio commands
             ipcRenderer.on('stop-persistent-audio', () => {
-                console.log('Received stop persistent audio command in index.html');
+                console.log('🛑 [INDEX] Received stop persistent audio command');
                 if (globalAudioElement) {
                     globalAudioElement.pause();
                     globalAudioElement.currentTime = 0;
                     globalAudioElement.dataset.currentCode = '';
                     globalAudioElement.dataset.currentIndex = '';
-                    console.log('Stopped global persistent audio in index.html');
+                    console.log('🛑 [INDEX] Stopped global persistent audio');
+                }
+            });
+
+            // Listen for persistent sound stopped events
+            ipcRenderer.on('persistent-sound-stopped', (event, { code }) => {
+                console.log('🛑 [INDEX] Persistent sound stopped for code:', code);
+                
+                // Stop audio if it matches the code
+                if (globalAudioElement && globalAudioElement.dataset.currentCode === code) {
+                    globalAudioElement.pause();
+                    globalAudioElement.currentTime = 0;
+                    globalAudioElement.dataset.currentCode = '';
+                    globalAudioElement.dataset.currentIndex = '';
+                    console.log('🛑 [INDEX] Stopped audio for specific code:', code);
+                }
+                
+                // Remove from local persistent tracking
+                if (persistentSounds.has(code)) {
+                    persistentSounds.delete(code);
+                    console.log('🗑️ [INDEX] Removed from persistent sounds:', code);
                 }
             });
 

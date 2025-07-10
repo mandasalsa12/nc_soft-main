@@ -19,7 +19,8 @@
             flex-direction: column;
             gap: 8px;
             pointer-events: auto;
-            /* Position akan diatur secara dinamis oleh JavaScript berdasarkan notificationSettings */
+            top: 24px;
+            right: 24px;
         }
 
         .notification-popup {
@@ -36,6 +37,7 @@
 
         .notification-popup.completed {
             border-left: 4px solid #22c55e !important;
+            background-color: #dcfce7;
         }
 
         /* Animation styles */
@@ -76,13 +78,10 @@
         .notification-popup.show {
             animation: slideIn 0.5s forwards ease-out, alert-pulse 2s infinite;
             background-color: #fee2e2;
-            border-color: #ef4444;
         }
 
         .notification-popup.completed {
             animation: completed-glow 1.5s ease-in-out infinite;
-            background-color: #dcfce7;
-            border-color: #22c55e;
             opacity: 1;
             transform: translateX(0);
         }
@@ -269,13 +268,16 @@
         // Load display config
         async function loadDisplayConfig() {
             try {
+                console.log('🏗️ [DISPLAY] Loading display config...');
                 const config = await ipcRenderer.invoke('get-display-config');
                 if (config) {
                     shapes = config.shapes || [];
                     floorplanImg = config.floorplanImg || '';
                     
+                    console.log('🏗️ [DISPLAY] Raw config loaded - shapes count:', shapes.length);
+                    
                     // Pastikan shapes memiliki properti yang diperlukan
-                    shapes.forEach(shape => {
+                    shapes.forEach((shape, index) => {
                         if (!shape.color) {
                             shape.color = getShapeColor(shape.type || 'NC');
                         }
@@ -289,14 +291,11 @@
                             shape.height = 70;
                         }
                         shape.blinking = false; // Reset blinking state saat load
+                        
+                        console.log(`📍 [DISPLAY] Shape ${index + 1}: CODE="${shape.code}" TYPE="${shape.type}" at (${shape.x}, ${shape.y}) size ${shape.width}x${shape.height} color="${shape.color}"`);
                     });
                     
                     console.log('🏗️ [DISPLAY] Display config loaded:', shapes.length, 'shapes');
-                    
-                    // Log posisi shapes yang dimuat untuk debugging - ENHANCED
-                    shapes.forEach((shape, index) => {
-                        console.log(`📍 [DISPLAY] Shape ${index + 1}: CODE="${shape.code}" TYPE="${shape.type}" at (${shape.x}, ${shape.y}) size ${shape.width}x${shape.height} color="${shape.color}"`);
-                    });
                     
                     // Log semua kode shape yang tersedia untuk memudahkan debugging
                     const shapeCodes = shapes.map(s => s.code).filter(code => code && code.trim() !== '');
@@ -304,11 +303,15 @@
                     
                     // Render floor plan dan shapes
                     renderFloorplan();
+                    
+                    return true;
                 } else {
                     console.warn('⚠️ [DISPLAY] No display config found');
+                    return false;
                 }
             } catch (error) {
                 console.error('❌ [DISPLAY] Error loading display config:', error);
+                return false;
             }
         }
 
@@ -581,9 +584,85 @@
         // Listen for serial data untuk blinking shapes
         ipcRenderer.on('serial-data', (event, code) => {
             console.log('📡 [DISPLAY] Received serial data:', code);
+            console.log('📋 [DISPLAY] Current shapes available:', shapes.length, shapes.map(s => s.code));
+            console.log('📊 [DISPLAY] Current activeAlerts:', activeAlerts.length, activeAlerts.map(a => ({ code: a.code, status: a.status })));
             
-            // Process call menggunakan fungsi processCall yang sudah ada
+            // Process call menggunakan fungsi processCall yang sudah ada (ini akan handle sound + call history)
             processCall(code);
+            
+            // ADDITIONAL: Handle kode panggilan untuk shape blinking - DIRECT IMMEDIATE BLINKING
+            if (code.startsWith('10')) {
+                const targetShape = shapes.find(s => s.code === code);
+                if (targetShape) {
+                    console.log('🔄 [DISPLAY] Starting IMMEDIATE blink for shape:', targetShape.code, targetShape.type);
+                    targetShape.blinking = true;
+                    
+                    // Tandai bahwa shape ini sedang blinking
+                    blinkingShapes.set(code, true);
+                    
+                    // Simpan ke persistent blinking
+                    persistentBlinking.set(code, true);
+                    console.log('✅ [DISPLAY] Added to persistent blinking:', code);
+                    
+                    // Start render loop untuk animasi yang smooth - IMMEDIATE
+                    if (!animationFrameId) {
+                        console.log('🎬 [DISPLAY] Starting IMMEDIATE animation loop');
+                        renderShapes();
+                    } else {
+                        // Force render immediately even if animation is running
+                        renderShapes();
+                    }
+                } else {
+                    console.warn('⚠️ [DISPLAY] Shape not found for code:', code);
+                    console.log('🔍 [DISPLAY] Available shapes:', shapes.map(s => ({ code: s.code, type: s.type })));
+                    
+                    // Try to load shapes if empty
+                    if (shapes.length === 0) {
+                        console.log('🔄 [DISPLAY] No shapes loaded, attempting to reload...');
+                        loadDisplayConfig().then(() => {
+                            // Retry after loading
+                            const retryShape = shapes.find(s => s.code === code);
+                            if (retryShape) {
+                                console.log('🔄 [DISPLAY] Retry: Starting blink after reload for:', code);
+                                retryShape.blinking = true;
+                                blinkingShapes.set(code, true);
+                                persistentBlinking.set(code, true);
+                                renderShapes();
+                            }
+                        });
+                    }
+                }
+            }
+            
+            // ADDITIONAL: Handle kode reset untuk shape blinking - DIRECT IMMEDIATE STOP
+            if (code.startsWith('90')) {
+                const targetCode = '10' + code.substring(2);
+                console.log('🔄 [DISPLAY] Reset signal for IMMEDIATE shape blinking stop:', targetCode);
+                
+                // Stop blinking untuk shape yang sesuai - IMMEDIATE
+                const targetShape = shapes.find(s => s.code === targetCode);
+                if (targetShape) {
+                    targetShape.blinking = false;
+                    console.log('🛑 [DISPLAY] Stopped IMMEDIATE blinking for shape:', targetShape.code, targetShape.type);
+                } else {
+                    console.warn('⚠️ [DISPLAY] Shape not found for reset:', targetCode);
+                }
+                
+                // Remove dari tracking blinking shapes - IMMEDIATE
+                if (blinkingShapes.has(targetCode)) {
+                    blinkingShapes.delete(targetCode);
+                    console.log('🗑️ [DISPLAY] Removed from blinkingShapes IMMEDIATELY:', targetCode);
+                }
+                
+                // Remove dari persistent blinking - IMMEDIATE
+                if (persistentBlinking.has(targetCode)) {
+                    persistentBlinking.delete(targetCode);
+                    console.log('🗑️ [DISPLAY] Removed from persistent blinking IMMEDIATELY:', targetCode);
+                }
+                
+                // Render ulang untuk menampilkan perubahan - IMMEDIATE
+                renderShapes();
+            }
         });
 
         // Listen for call history updates untuk sinkronisasi dengan display_config.html dan index.html
@@ -612,7 +691,7 @@
                 console.log('⚠️ [DISPLAY] Active alerts updated:', activeAlerts.length, 'alerts');
                 console.log('📋 [DISPLAY] Current active alerts statuses:', activeAlerts.map(a => ({ code: a.code, status: a.status })));
                 
-                // Check for new active alerts and trigger blinking
+                // ONLY trigger blinking for NEW active alerts (not completed ones)
                 activeAlerts.forEach(alert => {
                     if (alert.status === 'active') {
                         const wasAlreadyActive = previousActiveAlerts.find(prev => prev.code === alert.code && prev.status === 'active');
@@ -661,26 +740,41 @@
                 console.log('🔊 [DISPLAY] Persistent sounds updated:', persistentSounds.size, 'sounds');
             }
             
-            // Sync blinking state dari persistent blinking
+            // Sync blinking state ONLY for truly active persistent blinking (not completed)
             if (data.persistentBlinking) {
-                persistentBlinking = new Map(data.persistentBlinking);
+                const newPersistentBlinking = new Map(data.persistentBlinking);
+                console.log('🔄 [DISPLAY] Syncing persistent blinking from main:', newPersistentBlinking.size, 'entries');
                 
-                // Update blinking state berdasarkan persistent data
-                persistentBlinking.forEach((isActive, code) => {
+                // Apply blinking state berdasarkan persistent data AND alert status
+                newPersistentBlinking.forEach((isActive, code) => {
                     const shape = shapes.find(s => s.code === code);
-                    if (shape) {
-                        shape.blinking = isActive;
-                        if (isActive) {
+                    if (shape && isActive) {
+                        // ONLY start blinking if there's actually an ACTIVE alert for this code
+                        const hasActiveAlert = activeAlerts.some(alert => alert.code === code && alert.status === 'active');
+                        
+                        if (hasActiveAlert) {
+                            shape.blinking = true;
                             blinkingShapes.set(code, true);
-                            console.log('🔄 [DISPLAY] Synced blinking for shape:', code);
+                            persistentBlinking.set(code, true);
+                            console.log('🔄 [DISPLAY] Synced blinking for ACTIVE alert:', code);
                         } else {
+                            console.log('🚫 [DISPLAY] Skipping blinking for completed/non-active alert:', code);
+                            shape.blinking = false;
                             blinkingShapes.delete(code);
+                            persistentBlinking.delete(code);
                         }
+                    } else if (shape && !isActive) {
+                        shape.blinking = false;
+                        blinkingShapes.delete(code);
+                        persistentBlinking.delete(code);
+                        console.log('🛑 [DISPLAY] Stopped blinking for inactive persistent code:', code);
                     }
                 });
                 
-                // Start render loop jika ada blinking
-                if (persistentBlinking.size > 0 && !animationFrameId) {
+                // Start render loop jika ada blinking yang ACTIVE
+                const hasActiveBlinking = Array.from(blinkingShapes.values()).some(isBlinking => isBlinking);
+                if (hasActiveBlinking && !animationFrameId) {
+                    console.log('🎬 [DISPLAY] Starting render loop for active blinking');
                     renderShapes();
                 }
             }
@@ -812,34 +906,31 @@
 
         // Listen for persistent audio playback commands
         ipcRenderer.on('play-persistent-audio', (event, { code, soundFile, currentIndex, totalSounds }) => {
-            console.log('Received persistent audio command in display.html:', { code, soundFile, currentIndex, totalSounds });
+            console.log('🔊 [DISPLAY] Received persistent audio command:', { code, soundFile, currentIndex, totalSounds });
             
             // Ensure global audio element exists
             const audioElement = ensureGlobalAudioElement();
             
-            // Stop current audio if playing different sound
-            if (audioElement.src && !audioElement.src.includes(soundFile)) {
-                audioElement.pause();
-                audioElement.currentTime = 0;
-            }
-            
-            // Store metadata
+            // Store metadata FIRST before any audio operations
             audioElement.dataset.currentCode = code;
             audioElement.dataset.currentIndex = currentIndex.toString();
             
             // Set the audio source
             const newSrc = `sounds/${soundFile}`;
-            if (audioElement.src !== newSrc) {
+            
+            // Only change source if different to avoid interruption
+            if (!audioElement.src.includes(soundFile)) {
                 audioElement.src = newSrc;
-                console.log('Set global audio source to:', audioElement.src);
+                console.log('🎵 [DISPLAY] Set audio source to:', audioElement.src);
             }
             
-            // Play audio immediately if can play through
+            // Play audio immediately if ready, otherwise wait for ready state
             const playAudio = () => {
                 audioElement.play().then(() => {
-                    console.log('Global audio started successfully in display.html');
+                    console.log('🎵 [DISPLAY] Audio started successfully for code:', code, 'sound:', soundFile);
                 }).catch(error => {
-                    console.error('Failed to play global audio in display.html:', error);
+                    console.error('❌ [DISPLAY] Failed to play audio:', error);
+                    // Notify main process of failure
                     ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                 });
             };
@@ -848,21 +939,54 @@
                 playAudio();
             } else {
                 audioElement.addEventListener('canplaythrough', playAudio, { once: true });
-                audioElement.addEventListener('loadeddata', () => {
-                    console.log('Audio data loaded in display.html');
+                audioElement.addEventListener('error', () => {
+                    console.error('❌ [DISPLAY] Audio load error for:', soundFile);
+                    ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                 }, { once: true });
             }
         });
 
         // Listen for stop persistent audio commands
         ipcRenderer.on('stop-persistent-audio', () => {
-            console.log('Received stop persistent audio command in display.html');
+            console.log('🛑 [DISPLAY] Received stop persistent audio command');
             if (globalAudioElement) {
                 globalAudioElement.pause();
                 globalAudioElement.currentTime = 0;
                 globalAudioElement.dataset.currentCode = '';
                 globalAudioElement.dataset.currentIndex = '';
-                console.log('Stopped global persistent audio in display.html');
+                console.log('🛑 [DISPLAY] Stopped global persistent audio');
+            }
+        });
+
+        // Listen for persistent sound stopped events
+        ipcRenderer.on('persistent-sound-stopped', (event, { code }) => {
+            console.log('🛑 [DISPLAY] Persistent sound stopped for code:', code);
+            
+            // Stop audio if it matches the code
+            if (globalAudioElement && globalAudioElement.dataset.currentCode === code) {
+                globalAudioElement.pause();
+                globalAudioElement.currentTime = 0;
+                globalAudioElement.dataset.currentCode = '';
+                globalAudioElement.dataset.currentIndex = '';
+                console.log('🛑 [DISPLAY] Stopped audio for specific code:', code);
+            }
+            
+            // Stop blinking for the corresponding shape
+            const shape = shapes.find(s => s.code === code);
+            if (shape && shape.blinking) {
+                shape.blinking = false;
+                blinkingShapes.delete(code);
+                persistentBlinking.delete(code);
+                console.log('🛑 [DISPLAY] Stopped blinking for shape:', code);
+                
+                // Trigger render to show changes
+                renderShapes();
+            }
+            
+            // Remove from local persistent tracking
+            if (persistentSounds.has(code)) {
+                persistentSounds.delete(code);
+                console.log('🗑️ [DISPLAY] Removed from persistent sounds:', code);
             }
         });
 
@@ -952,45 +1076,72 @@
         // Load display config saat startup
         document.addEventListener('DOMContentLoaded', async () => {
             try {
-                await loadMasterData(); // Load master data first
+                console.log('🚀 [DISPLAY] Starting initialization...');
+                
+                // Step 1: Load master data first
+                console.log('📚 [DISPLAY] Step 1: Loading master data...');
+                await loadMasterData();
+                
+                // Step 2: Load display config  
+                console.log('🏗️ [DISPLAY] Step 2: Loading display config...');
                 await loadDisplayConfig();
+                
+                // Step 3: Load notification settings
+                console.log('🔔 [DISPLAY] Step 3: Loading notification settings...');
                 await loadNotificationSettings();
                 
-                // Set initial container position
+                // Step 4: Set initial container position
                 const container = document.getElementById('notification-popup-container');
                 if (container) {
                     setContainerPosition(container, notificationSettings.position);
                     console.log('🎯 [DISPLAY] Initial container position set on startup');
                 }
                 
-                // Load active alerts and call history from main process
+                // Step 5: Load active alerts and call history from main process
+                console.log('📊 [DISPLAY] Step 5: Loading active alerts from main...');
                 await loadActiveAlertsFromMain();
                 
-                // Trigger blinking for any existing active alerts after shapes are loaded
-                if (shapes.length > 0 && activeAlerts.length > 0) {
-                    console.log('🔄 [DISPLAY] Shapes and alerts loaded, triggering blinking...');
-                    triggerBlinkingForActiveAlerts();
+                // Step 6: Trigger blinking for any existing active alerts after shapes are loaded
+                if (shapes.length > 0) {
+                    console.log('🔄 [DISPLAY] Step 6: Shapes loaded, checking for active alerts...');
+                    console.log('📋 [DISPLAY] Available shapes:', shapes.map(s => s.code));
+                    console.log('⚠️ [DISPLAY] Active alerts to process:', activeAlerts.map(a => ({ code: a.code, status: a.status })));
+                    
+                    if (activeAlerts.length > 0) {
+                        console.log('🔄 [DISPLAY] Triggering blinking for existing active alerts...');
+                        triggerBlinkingForActiveAlerts();
+                    }
+                } else {
+                    console.warn('⚠️ [DISPLAY] No shapes available after loading - serial data may not work properly');
                 }
                 
-                // Initialize global audio element
+                // Step 7: Initialize global audio element
+                console.log('🔊 [DISPLAY] Step 7: Initializing audio...');
                 ensureGlobalAudioElement();
                 
-                // Check if audio is currently playing and restore if needed
+                // Step 8: Check if audio is currently playing and restore if needed
                 await checkAudioStatus();
                 
-                // Request restoration of any playing audio after navigation
+                // Step 9: Request restoration of any playing audio after navigation
                 const restorationResult = await ipcRenderer.invoke('restore-audio-after-navigation');
                 if (restorationResult.restored) {
-                    console.log('Audio restoration completed:', restorationResult.status);
+                    console.log('🔊 [DISPLAY] Audio restoration completed:', restorationResult.status);
                 }
                 
-                // Setup datetime update
+                // Step 10: Setup datetime update
                 updateDateTime();
                 setInterval(updateDateTime, 1000);
                 
-                console.log('Display.html initialized successfully');
+                console.log('✅ [DISPLAY] Initialization completed successfully');
+                console.log('📊 [DISPLAY] Final state:', {
+                    shapesCount: shapes.length,
+                    masterDataCount: masterData.length,
+                    activeAlertsCount: activeAlerts.length,
+                    availableShapeCodes: shapes.map(s => s.code),
+                    activeAlertCodes: activeAlerts.map(a => a.code)
+                });
             } catch (error) {
-                console.error('Error initializing display.html:', error);
+                console.error('❌ [DISPLAY] Error initializing display.html:', error);
             }
         });
 
@@ -1019,23 +1170,76 @@
         // Load master data
         async function loadMasterData() {
             try {
+                console.log('📚 [DISPLAY] Loading master data...');
                 const config = await ipcRenderer.invoke('load-config');
                 masterData = config.masterData || [];
-                console.log('Master data loaded in display.html:', masterData.length, 'items');
+                console.log('📚 [DISPLAY] Master data loaded:', masterData.length, 'items');
                 
                 // Log detail master data untuk debugging
                 masterData.forEach((item, index) => {
                     const sounds = [item.v1, item.v2, item.v3, item.v4, item.v5, item.v6].filter(v => v && v.trim() !== '');
-                    console.log(`Master data ${index + 1}:`, {
+                    console.log(`📋 [DISPLAY] Master data ${index + 1}:`, {
                         code: item.charCode,
                         room: item.roomName,
                         bed: item.bedName,
+                        shape: item.shape,
                         soundCount: sounds.length,
                         sounds: sounds
                     });
                 });
+                
+                // Jika tidak ada shapes di display config, coba buat dari master data
+                if (shapes.length === 0 && masterData.length > 0) {
+                    console.log('🔄 [DISPLAY] No shapes found, creating from master data...');
+                    await createShapesFromMasterData();
+                }
+                
+                return true;
             } catch (error) {
-                console.error('Error loading master data:', error);
+                console.error('❌ [DISPLAY] Error loading master data:', error);
+                return false;
+            }
+        }
+
+        // Create shapes from master data
+        async function createShapesFromMasterData() {
+            try {
+                const newShapes = [];
+                masterData.forEach((item, index) => {
+                    if (item.shape && item.shape.trim() !== '' && item.charCode) {
+                        const newShape = {
+                            code: item.charCode,
+                            type: item.shape,
+                            x: 100 + (index * 120), // Default positions
+                            y: 100 + ((index % 3) * 100),
+                            width: 90,
+                            height: 70,
+                            blinking: false,
+                            color: getShapeColor(item.shape)
+                        };
+                        newShapes.push(newShape);
+                        console.log(`✅ [DISPLAY] Created shape from master data: ${item.charCode} (${item.shape})`);
+                    }
+                });
+                
+                if (newShapes.length > 0) {
+                    shapes = newShapes;
+                    console.log(`🎯 [DISPLAY] Created ${newShapes.length} shapes from master data`);
+                    
+                    // Log semua kode shape yang baru dibuat
+                    const shapeCodes = shapes.map(s => s.code);
+                    console.log('🔍 [DISPLAY] New shape codes available:', shapeCodes);
+                    
+                    // Render shapes
+                    renderFloorplan();
+                    return true;
+                } else {
+                    console.warn('⚠️ [DISPLAY] No valid shapes found in master data');
+                    return false;
+                }
+            } catch (error) {
+                console.error('❌ [DISPLAY] Error creating shapes from master data:', error);
+                return false;
             }
         }
 
@@ -1110,6 +1314,14 @@
                         activeAlertsCount: activeAlerts.length
                     });
                     
+                    // DEBUG: Log status of all alerts loaded
+                    if (activeAlerts.length > 0) {
+                        console.log('📋 [DISPLAY] Alert statuses on load:');
+                        activeAlerts.forEach(alert => {
+                            console.log(`  - ${alert.code}: ${alert.status}`);
+                        });
+                    }
+                    
                     // Update persistent data
                     if (data.persistentSounds) {
                         persistentSounds = new Map(data.persistentSounds);
@@ -1117,30 +1329,36 @@
                     }
                     
                     if (data.persistentBlinking) {
-                        persistentBlinking = new Map(data.persistentBlinking);
-                        console.log('🔄 [DISPLAY] Loaded persistent blinking:', persistentBlinking.size);
+                        const loadedPersistentBlinking = new Map(data.persistentBlinking);
+                        console.log('🔄 [DISPLAY] Loaded persistent blinking from main:', loadedPersistentBlinking.size);
                         
-                        // Apply blinking to shapes - DEBUG VERSION
-                        console.log('🔄 [DISPLAY] Applying persistent blinking to shapes...');
-                        persistentBlinking.forEach((isActive, code) => {
+                        // Apply blinking to shapes - ONLY FOR ACTIVE ALERTS
+                        console.log('🔄 [DISPLAY] Applying persistent blinking to shapes (ACTIVE ONLY)...');
+                        loadedPersistentBlinking.forEach((isActive, code) => {
                             if (isActive) {
-                                const shape = shapes.find(s => s.code === code);
-                                if (shape) {
-                                    console.log('✅ [DISPLAY] Applied blinking to shape:', code, 'at position:', shape.x, shape.y);
-                                    shape.blinking = true;
-                                    blinkingShapes.set(code, true);
+                                // CRITICAL: Only apply blinking if there's an ACTIVE alert
+                                const activeAlert = activeAlerts.find(alert => alert.code === code && alert.status === 'active');
+                                
+                                if (activeAlert) {
+                                    const shape = shapes.find(s => s.code === code);
+                                    if (shape) {
+                                        console.log('✅ [DISPLAY] Applied blinking to shape for ACTIVE alert:', code);
+                                        shape.blinking = true;
+                                        blinkingShapes.set(code, true);
+                                        persistentBlinking.set(code, true);
+                                    } else {
+                                        console.warn('⚠️ [DISPLAY] Shape not found for persistent blinking code:', code);
+                                    }
                                 } else {
-                                    console.warn('⚠️ [DISPLAY] Shape not found for persistent blinking code:', code);
+                                    console.log('🚫 [DISPLAY] Skipping blinking for completed/non-active persistent code:', code);
                                 }
                             }
                         });
                         
-                        // Also trigger blinking for current active alerts
-                        triggerBlinkingForActiveAlerts();
-                        
-                        // Start render loop if needed
-                        if (persistentBlinking.size > 0 && !animationFrameId) {
-                            console.log('🎬 [DISPLAY] Starting render loop for persistent blinking');
+                        // Start render loop if needed (only if there are actually active blinking shapes)
+                        const activeBlinkingCount = Array.from(blinkingShapes.values()).filter(Boolean).length;
+                        if (activeBlinkingCount > 0 && !animationFrameId) {
+                            console.log('🎬 [DISPLAY] Starting render loop for', activeBlinkingCount, 'active blinking shapes');
                             renderShapes();
                         }
                     }
@@ -1436,147 +1654,103 @@
             }
         }
 
-        // Process call function - main logic for handling all codes
-        function processCall(code) {
-            console.log('🔄 [DISPLAY] Processing call with code:', code, 'Current standby mode:', standbyMode);
+        // Alias function untuk compatibility
+        async function updateCallHistoryToMain() {
+            return await updatePersistentStateToMain();
+        }
 
+        // Process call function - main logic for handling all codes
+        async function processCall(code) {
+            console.log('Processing call with code:', code);
+            
             // Khusus untuk kode standby
             if (code === '99' || code === '99:') {
-                const wasInStandby = standbyMode;
-                
-                // Set standby mode dan indikator
                 standbyMode = true;
                 setStandbyIndicator('green');
                 setTimeout(() => {
                     setStandbyIndicator('yellow');
                 }, 500);
-                
-                // Hanya update indikator tanpa notifikasi
                 console.log('Entered standby mode - indicator updated');
                 return;
             }
 
             // Khusus untuk kode 100 (keluar dari standby)
             if (code === '100') {
-                const wasInStandby = standbyMode;
                 standbyMode = false;
                 updateConnectionStatus();
-                
-                // Hanya update indikator tanpa notifikasi
-                console.log('Exited standby mode - indicator updated');
-                
-                // Reset standby notification state
                 lastStandbyNotification = null;
+                console.log('Exited standby mode - indicator updated');
                 return;
             }
-
-            // For reset calls (90x) - handle reset first before original logic
+            
+            // Untuk kode reset (90x atau 90xx)
             if (code.startsWith('90')) {
                 const bedNumber = code.substring(2);
                 const originalCode = `10${bedNumber}`;
                 
-                console.log('🔄 [DISPLAY] Reset code detected:', code, '→ Original code:', originalCode);
+                console.log('Reset code detected:', code, '→ Original code:', originalCode);
                 
-                // Find data for validation first
+                // Cari data di master data untuk validasi
                 const data = masterData.find(d => d.charCode === originalCode);
                 if (!isValidMasterData(data)) {
                     console.log('Original code not found or incomplete in master data:', originalCode);
                     showNotification('warning', `Kode ${originalCode} tidak ditemukan atau data tidak lengkap`);
                     return;
                 }
+
+                // STOP AUDIO IMMEDIATELY
+                console.log('Stopping persistent sound for code:', originalCode);
+                await ipcRenderer.invoke('stop-persistent-sounds', { code: originalCode });
+
+                // STOP BLINKING IMMEDIATELY
+                const targetShape = shapes.find(s => s.code === originalCode);
+                if (targetShape) {
+                    targetShape.blinking = false;
+                    blinkingShapes.delete(originalCode);
+                    persistentBlinking.delete(originalCode);
+                    console.log('Stopped blinking for shape:', originalCode);
+                    renderShapes();
+                }
                 
-                console.log('📋 [DISPLAY] Found data for reset:', {
-                    originalCode,
-                    room: data.roomName,
-                    bed: data.bedName,
-                    hasPopup: activeNotifications.has(originalCode)
-                });
-                
-                // Update status alert menjadi 'completed' dalam activeAlerts
+                // Update call history dan active alerts
                 const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode);
                 if (alertIndex !== -1) {
                     const now = new Date();
+                    const resetTimeStr = formatDateTime(now);
+                    
+                    // Update call history
+                    const historyIndex = callHistory.findIndex(call => call.code === originalCode && call.status === 'active');
+                    if (historyIndex !== -1) {
+                        callHistory[historyIndex].status = 'completed';
+                        callHistory[historyIndex].resetTime = now;
+                        callHistory[historyIndex].resetTimeStr = resetTimeStr;
+                    }
+                    
+                    // Update active alert
                     activeAlerts[alertIndex].status = 'completed';
                     activeAlerts[alertIndex].resetTime = now;
-                    activeAlerts[alertIndex].resetTimeStr = formatDateTime(now);
-                    console.log('✅ [DISPLAY] Updated alert status to completed for code:', originalCode);
-                } else {
-                    console.warn('⚠️ [DISPLAY] No active alert found for reset code:', originalCode);
-                    console.log('📋 [DISPLAY] Current active alerts:', activeAlerts.map(a => ({ code: a.code, status: a.status })));
+                    activeAlerts[alertIndex].resetTimeStr = resetTimeStr;
+                    
+                    // Kirim update ke main process
+                    await updateCallHistoryToMain();
+                    
+                    // Tampilkan notifikasi reset
+                    const displayText = `${data.roomName} - ${data.bedName}`;
+                    showNotification('reset', displayText);
+                    
+                    // Hapus dari active alerts setelah delay
+                    setTimeout(async () => {
+                        const idx = activeAlerts.findIndex(a => a.id === activeAlerts[alertIndex].id);
+                        if (idx !== -1) {
+                            activeAlerts.splice(idx, 1);
+                            await updateCallHistoryToMain();
+                        }
+                    }, 3000);
                 }
                 
-                // Update status dalam callHistory juga
-                const historyIndex = callHistory.findIndex(entry => entry.code === originalCode && entry.status === 'active');
-                if (historyIndex !== -1) {
-                    const now = new Date();
-                    callHistory[historyIndex].status = 'completed';
-                    callHistory[historyIndex].resetTime = now;
-                    callHistory[historyIndex].resetTimeStr = formatDateTime(now);
-                    console.log('✅ [DISPLAY] Updated call history status to completed for code:', originalCode);
-                }
-                
-                // Trigger popup update dengan memanggil resetNotification langsung
-                console.log('🔄 [DISPLAY] Triggering resetNotification for popup update...');
-                resetNotification(originalCode);
-                
-                // Also call updateNotificationPopups for consistency
-                updateNotificationPopups();
-                
-                // Schedule removal of completed alert setelah popup selesai ditampilkan
-                setTimeout(() => {
-                    const completedAlertIndex = activeAlerts.findIndex(alert => alert.code === originalCode && alert.status === 'completed');
-                    if (completedAlertIndex !== -1) {
-                        activeAlerts.splice(completedAlertIndex, 1);
-                        console.log('🗑️ [DISPLAY] Removed completed alert from activeAlerts:', originalCode);
-                        // Update ke main process setelah cleanup
-                        updatePersistentStateToMain();
-                    }
-                }, 6000); // 5 detik untuk popup completed + 1 detik buffer
-                
-                // Stop blinking for shape
-                shapes.forEach(s => {
-                    if (s.code === originalCode) {
-                        s.blinking = false;
-                        console.log('🛑 [DISPLAY] Stopped blinking for shape:', s.code, s.type);
-                    }
-                });
-                
-                // Remove from tracking blinking shapes
-                if (blinkingShapes.has(originalCode)) {
-                    blinkingShapes.delete(originalCode);
-                    console.log('🛑 [DISPLAY] Removed from blinkingShapes:', originalCode);
-                }
-                
-                // Remove from persistent blinking
-                if (persistentBlinking.has(originalCode)) {
-                    persistentBlinking.delete(originalCode);
-                    console.log('🛑 [DISPLAY] Removed from persistent blinking:', originalCode);
-                }
-                
-                // Stop persistent sounds
-                ipcRenderer.invoke('stop-persistent-sounds', { code: originalCode }).then(result => {
-                    if (result.success) {
-                        console.log('🔇 [DISPLAY] Persistent sound stopped for code:', originalCode);
-                    } else {
-                        console.error('❌ [DISPLAY] Failed to stop persistent sound:', result.error);
-                    }
-                });
-                
-                // Update to main process dengan status yang sudah diubah
-                updatePersistentStateToMain();
-                
-                // Render shapes to reflect changes
-                renderShapes();
-                
-                // Show enhanced OS notification for reset
-                showEnhancedOSNotification(originalCode, 'reset');
-                
-                const displayText = `${data.roomName} - ${data.bedName}`;
-                showNotification('success', `Reset: ${displayText} - Telah ditangani`);
-                console.log('🎯 [DISPLAY] Reset completed for code:', originalCode, '- Status updated to completed');
                 return;
             }
-
+            
             // Untuk kode panggilan normal (10x atau 10xx)
             if (code.startsWith('10')) {
                 console.log('Processing call code:', code);
@@ -1586,6 +1760,13 @@
                 if (!isValidMasterData(data)) {
                     console.log('Call code not found or incomplete in master data:', code);
                     showNotification('warning', `Kode ${code} tidak ditemukan atau data tidak lengkap`);
+                    return;
+                }
+
+                // Cek apakah panggilan sudah aktif
+                const existingAlert = activeAlerts.find(alert => alert.code === code && alert.status === 'active');
+                if (existingAlert) {
+                    console.log('Call already active:', code);
                     return;
                 }
                 
@@ -1599,16 +1780,27 @@
                     }
                 }, 500);
 
+                // START BLINKING
+                const targetShape = shapes.find(s => s.code === code);
+                if (targetShape) {
+                    targetShape.blinking = true;
+                    blinkingShapes.set(code, true);
+                    persistentBlinking.set(code, true);
+                    if (!animationFrameId) {
+                        renderShapes();
+                    }
+                }
+
                 // Proses panggilan dan catat ke call history
                 const now = new Date();
                 const timeStr = formatDateTime(now);
                 
-                // Clean room and bed names - remove prefixes
+                // Clean room and bed names
                 const cleanRoom = data.roomName.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim();
                 const cleanBed = data.bedName.replace(/^(Bed|B\.)\s*/i, '').trim();
                 const displayText = `${cleanRoom} - ${cleanBed}`;
                 
-                // Buat entry call history baru dengan format yang lebih sederhana
+                // Buat entry call history baru
                 const callEntry = {
                     id: Date.now(),
                     code: code,
@@ -1626,16 +1818,13 @@
                 callHistory.unshift(callEntry);
                 activeAlerts.push({...callEntry});
                 
-                // Kirim update call history ke main process untuk dibagikan dengan index.html
-                updateCallHistoryToMain();
+                // Kirim update ke main process
+                await updateCallHistoryToMain();
                 
                 // Tampilkan notifikasi
-                showNotification('info', `Panggilan: ${displayText}`);
+                showNotification('call', displayText);
                 
-                // Tampilkan notifikasi OS untuk alert baru - ENHANCED FORMAT
-                showEnhancedOSNotification(code, 'call');
-
-                // Play sounds dan simpan ke persistent
+                // Play sounds
                 const sounds = [];
                 if (data.v1) sounds.push(data.v1);
                 if (data.v2) sounds.push(data.v2);
@@ -1643,17 +1832,10 @@
                 if (data.v4) sounds.push(data.v4);
                 if (data.v5) sounds.push(data.v5);
                 if (data.v6) sounds.push(data.v6);
-
+                
                 if (sounds.length > 0) {
-                    // Gunakan global audio player di main process
-                    console.log('Requesting persistent sound playback for code:', code);
-                    ipcRenderer.invoke('play-persistent-sounds', { code, sounds }).then(result => {
-                        if (result.success) {
-                            console.log('Persistent sound playback started for code:', code);
-                        } else {
-                            console.error('Failed to start persistent sound playback:', result.error);
-                        }
-                    });
+                    console.log('Starting sound playback for code:', code);
+                    await ipcRenderer.invoke('play-persistent-sounds', { code, sounds });
                 }
             }
         }
@@ -1666,39 +1848,84 @@
         
         // Function untuk show notification
         function showNotification(type, message, duration = 5000) {
-            // Buat container jika belum ada
-            let container = document.getElementById('notification-container');
+            const container = document.getElementById('notification-popup-container');
             if (!container) {
-                container = document.createElement('div');
-                container.id = 'notification-container';
-                container.className = 'fixed top-4 right-4 z-50';
-                document.body.appendChild(container);
+                console.error('Notification container not found');
+                return;
             }
-            
-            const notification = document.createElement('div');
-            
-            const bgColor = {
-                success: 'bg-green-500',
-                error: 'bg-red-500',
-                warning: 'bg-yellow-500',
-                info: 'bg-blue-500'
-            }[type] || 'bg-gray-500';
-            
-            notification.className = `${bgColor} text-white px-4 py-2 rounded shadow-lg mb-2 flex items-center`;
-            notification.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'} mr-2"></i>
-                <span>${message}</span>
-            `;
-            
-            container.appendChild(notification);
-            
-            // Auto hide
-            setTimeout(() => {
-                if (notification.parentNode) {
+
+            // Remove existing notification with same code if it exists
+            const existingNotifications = container.querySelectorAll('.notification-popup');
+            existingNotifications.forEach(notification => {
+                if (notification.dataset.code === message) {
                     notification.remove();
                 }
+            });
+
+            const notification = document.createElement('div');
+            notification.className = 'notification-popup';
+            notification.dataset.code = message;
+
+            if (type === 'call') {
+                notification.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-bold text-lg text-red-800">Nurse Call</h3>
+                            <p class="text-sm text-red-600">${message}</p>
+                        </div>
+                        <span class="text-xs text-white px-2 py-1 rounded bg-red-500">${new Date().toLocaleTimeString()}</span>
+                    </div>
+                    <div class="mt-3 flex items-center">
+                        <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                        <span class="ml-2 text-xs text-red-600">Menunggu Response</span>
+                    </div>
+                `;
+                notification.classList.add('show');
+            } else if (type === 'reset') {
+                notification.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-bold text-lg text-green-800">Telah Ditangani</h3>
+                            <p class="text-sm text-green-600">${message}</p>
+                        </div>
+                        <span class="text-xs text-white px-2 py-1 rounded bg-green-500">${new Date().toLocaleTimeString()}</span>
+                    </div>
+                    <div class="mt-3 flex items-center">
+                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                        <span class="ml-2 text-xs text-green-600">Telah di Respon</span>
+                    </div>
+                `;
+                notification.classList.add('completed');
+                duration = 3000; // Shorter duration for reset notifications
+            } else {
+                // System notifications (warning, error, etc)
+                const bgColor = {
+                    success: 'bg-green-500',
+                    error: 'bg-red-500',
+                    warning: 'bg-yellow-500',
+                    info: 'bg-blue-500'
+                }[type] || 'bg-gray-500';
+
+                notification.innerHTML = `
+                    <div class="flex items-center">
+                        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'} mr-2"></i>
+                        <span>${message}</span>
+                    </div>
+                `;
+                notification.classList.add(bgColor, 'text-white', 'px-4', 'py-2', 'rounded', 'shadow-lg');
+            }
+
+            container.appendChild(notification);
+
+            setTimeout(() => {
+                notification.classList.add('hide');
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 500);
             }, duration);
-            
+
             return notification;
         }
 
@@ -1778,48 +2005,38 @@
         // Test functions untuk debugging (opsional)
         window.testDisplayCall = {
             test101: () => {
-                console.log('Testing call 101...');
+                console.log('🧪 [TEST] Testing call 101...');
                 processCall('101');
             },
             test901: () => {
-                console.log('Testing reset 901...');
+                console.log('🧪 [TEST] Testing reset 901...');
                 processCall('901');
             },
             test99: () => {
-                console.log('Testing standby 99...');
+                console.log('🧪 [TEST] Testing standby 99...');
                 processCall('99');
             },
             test100: () => {
-                console.log('Testing exit standby 100...');
+                console.log('🧪 [TEST] Testing exit standby 100...');
                 processCall('100');
             },
             testCustom: (code) => {
-                console.log('Testing custom code:', code);
+                console.log('🧪 [TEST] Testing custom code:', code);
                 processCall(code.toString());
             },
             showMasterData: () => {
-                console.log('Current master data:', masterData);
+                console.log('📋 [TEST] Current master data:', masterData);
                 return masterData;
+            },
+            showShapes: () => {
+                console.log('🔍 [TEST] Current shapes:', shapes);
+                return shapes;
             },
             testMasterDataLookup: (code) => {
                 const data = masterData.find(d => d.charCode === code);
-                console.log('Lookup result for code', code, ':', data);
+                console.log('🔍 [TEST] Lookup result for code', code, ':', data);
                 return data;
             },
-            getStandbyState: () => {
-                console.log('Current standby state:', { 
-                    standbyMode, 
-                    lastStandbyNotification 
-                });
-                return { standbyMode, lastStandbyNotification };
-            },
-            resetStandbyState: () => {
-                standbyMode = false;
-                lastStandbyNotification = null;
-                updateConnectionStatus();
-                console.log('Standby state reset');
-            },
-            // Debug functions for shapes
             testShapeBlinking: (code) => {
                 console.log('🧪 [TEST] Testing shape blinking for code:', code);
                 const shape = shapes.find(s => s.code === code);
@@ -1845,70 +2062,91 @@
                     renderShapes();
                 }
             },
-            showShapes: () => {
-                console.log('🧪 [TEST] Current shapes:', shapes);
-                return shapes;
-            },
             forceRender: () => {
                 console.log('🧪 [TEST] Force rendering shapes...');
                 renderShapes();
             },
-            // Debug popup issues
-            debugPopupIssue: () => {
+            debugState: () => {
                 console.log('🧪 [DEBUG] Current state:');
-                console.log('- callHistory:', callHistory.length, 'entries');
-                console.log('- activeAlerts:', activeAlerts.length, 'alerts');
-                console.log('- activeAlerts statuses:', activeAlerts.map(a => ({ code: a.code, status: a.status })));
-                console.log('- activeNotifications:', Array.from(activeNotifications.keys()));
-                
-                // Show current popups
-                const popups = document.querySelectorAll('.notification-popup');
-                console.log('- Current popups:', popups.length);
-                popups.forEach((popup, index) => {
-                    const code = popup.getAttribute('data-code');
-                    const isCompleted = popup.classList.contains('completed');
-                    console.log(`  Popup ${index + 1}: code=${code}, completed=${isCompleted}`);
-                });
+                console.log('- shapes:', shapes.length, shapes.map(s => ({ code: s.code, type: s.type, blinking: s.blinking })));
+                console.log('- masterData:', masterData.length, 'entries');
+                console.log('- activeAlerts:', activeAlerts.length, activeAlerts.map(a => ({ code: a.code, status: a.status })));
+                console.log('- blinkingShapes:', Array.from(blinkingShapes.entries()));
+                console.log('- animationFrameId:', animationFrameId);
+                return {
+                    shapes: shapes,
+                    masterData: masterData,
+                    activeAlerts: activeAlerts,
+                    blinkingShapes: Array.from(blinkingShapes.entries()),
+                    animationRunning: !!animationFrameId
+                };
             },
-            clearAll: () => {
-                console.log('🧪 [TEST] Clearing all data...');
-                callHistory = [];
-                activeAlerts = [];
-                activeNotifications.clear();
-                const popups = document.querySelectorAll('.notification-popup');
-                popups.forEach(p => p.remove());
-                console.log('🧪 [TEST] All cleared');
+            reloadAll: async () => {
+                console.log('🔄 [TEST] Reloading all data...');
+                await loadMasterData();
+                await loadDisplayConfig();
+                await loadActiveAlertsFromMain();
+                console.log('✅ [TEST] Reload completed');
+            },
+            simulateSerial: (code) => {
+                console.log('📡 [TEST] Simulating serial data:', code);
+                // Trigger the same event that would come from serial
+                const event = new CustomEvent('serial-data');
+                ipcRenderer.emit('serial-data', event, code);
             }
         };
 
-        console.log('Display.html test functions loaded. Use window.testDisplayCall for testing.');
-        console.log('Available test functions: testShapeBlinking(code), stopShapeBlinking(code), showShapes(), forceRender(), debugPopupIssue(), clearAll()');
+        console.log('🧪 [DISPLAY] Test functions loaded. Use window.testDisplayCall for testing.');
+        console.log('Available test functions: test101(), test901(), testShapeBlinking(code), debugState(), reloadAll(), simulateSerial(code)');
 
         // Helper function untuk trigger blinking pada shape berdasarkan active alerts
         function triggerBlinkingForActiveAlerts() {
-            console.log('🔄 [DISPLAY] Triggering blinking for all active alerts...');
+            console.log('🔄 [DISPLAY] Triggering blinking ONLY for ACTIVE alerts...');
+            console.log('📋 [DISPLAY] Current shapes available:', shapes.length, shapes.map(s => s.code));
+            console.log('⚠️ [DISPLAY] All alerts:', activeAlerts.length, activeAlerts.map(a => ({ code: a.code, status: a.status })));
             
+            // Filter HANYA alert yang benar-benar ACTIVE (bukan completed)
+            const trulyActiveAlerts = activeAlerts.filter(alert => alert.status === 'active');
+            console.log(`🔍 [DISPLAY] Found ${trulyActiveAlerts.length} truly ACTIVE alerts out of ${activeAlerts.length} total alerts`);
+            
+            // Log status all alerts for debugging
             activeAlerts.forEach(alert => {
-                if (alert.status === 'active') {
-                    const shape = shapes.find(s => s.code === alert.code);
-                    if (shape) {
-                        console.log('✅ [DISPLAY] Starting blinking for active alert:', alert.code);
-                        shape.blinking = true;
-                        blinkingShapes.set(alert.code, true);
-                        persistentBlinking.set(alert.code, true);
-                    } else {
-                        console.warn('⚠️ [DISPLAY] Shape not found for active alert:', alert.code);
-                        console.log('🔍 [DISPLAY] Available shapes:', shapes.map(s => ({ code: s.code, type: s.type })));
-                    }
+                console.log(`📋 [DISPLAY] Alert ${alert.code}: status=${alert.status}`);
+            });
+            
+            let triggeredCount = 0;
+            trulyActiveAlerts.forEach(alert => {
+                const shape = shapes.find(s => s.code === alert.code);
+                if (shape) {
+                    console.log('✅ [DISPLAY] Starting blinking for ACTIVE alert:', alert.code, 'status:', alert.status);
+                    shape.blinking = true;
+                    blinkingShapes.set(alert.code, true);
+                    persistentBlinking.set(alert.code, true);
+                    triggeredCount++;
+                } else {
+                    console.warn('⚠️ [DISPLAY] Shape not found for active alert:', alert.code);
+                    console.log('🔍 [DISPLAY] Available shape codes:', shapes.map(s => s.code));
+                    console.log('🔍 [DISPLAY] Available shapes detail:', shapes.map(s => ({ code: s.code, type: s.type })));
                 }
             });
             
             // Start animation if there are blinking shapes
             const hasBlinkingShapes = Array.from(blinkingShapes.values()).some(isBlinking => isBlinking);
             if (hasBlinkingShapes && !animationFrameId) {
-                console.log('🎬 [DISPLAY] Starting animation loop for active blinking shapes');
+                console.log('🎬 [DISPLAY] Starting animation loop for', triggeredCount, 'active blinking shapes');
                 renderShapes();
+            } else if (trulyActiveAlerts.length === 0) {
+                console.log('🔇 [DISPLAY] No active alerts found - no blinking to start');
+            } else {
+                console.log('🎬 [DISPLAY] Animation already running or no valid shapes found');
             }
+            
+            console.log('🎯 [DISPLAY] Blinking trigger summary:', {
+                totalAlerts: activeAlerts.length,
+                activeAlerts: trulyActiveAlerts.length,
+                shapesTriggered: triggeredCount,
+                animationRunning: !!animationFrameId
+            });
         }
     </script>
 </body>
