@@ -19,8 +19,6 @@
             flex-direction: column;
             gap: 8px;
             pointer-events: auto;
-            top: 24px;
-            right: 24px;
         }
 
         .notification-popup {
@@ -38,6 +36,7 @@
         .notification-popup.completed {
             border-left: 4px solid #22c55e !important;
             background-color: #dcfce7;
+            animation: none !important; /* No blinking for completed popups */
         }
 
         /* Animation styles */
@@ -71,7 +70,6 @@
 
         @keyframes completed-glow {
             0% { box-shadow: 0 0 5px rgba(34, 197, 94, 0.3); }
-            50% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.6); }
             100% { box-shadow: 0 0 5px rgba(34, 197, 94, 0.3); }
         }
 
@@ -81,9 +79,9 @@
         }
 
         .notification-popup.completed {
-            animation: completed-glow 1.5s ease-in-out infinite;
             opacity: 1;
             transform: translateX(0);
+            box-shadow: 0 0 5px rgba(34, 197, 94, 0.3); /* Static subtle shadow */
         }
 
         .notification-popup.hide {
@@ -207,6 +205,51 @@
                 padding: 0 8px;
             }
         }
+
+        /* Update animation styles */
+        @keyframes alert-pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .alert-pulse {
+            animation: alert-pulse 1s infinite;
+        }
+
+        @keyframes slide-right {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes slide-left {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes fade {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .animate-slide-right { animation: slide-right var(--animation-speed, 500ms) ease-out; }
+        .animate-slide-left { animation: slide-left var(--animation-speed, 500ms) ease-out; }
+        .animate-fade { animation: fade var(--animation-speed, 500ms) ease-out; }
+
+        .hide {
+            opacity: 0;
+            transition: opacity var(--animation-speed, 500ms) ease-out;
+        }
+
+        #notification-popup-container {
+            position: fixed;
+            z-index: 9999;
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -264,6 +307,86 @@
         let animationFrameId = null;
         let lastCanvasSize = { width: 0, height: 0 };
         let resizeTimeout;
+
+        // ADDED: Global timeout/interval tracking for proper cleanup
+        let activeTimeouts = new Set();
+        let activeIntervals = new Set();
+        
+        // Wrapper functions to track timeouts and intervals
+        function safeSetTimeout(callback, delay) {
+            const timeoutId = setTimeout(() => {
+                activeTimeouts.delete(timeoutId);
+                callback();
+            }, delay);
+            activeTimeouts.add(timeoutId);
+            return timeoutId;
+        }
+        
+        function safeClearTimeout(timeoutId) {
+            clearTimeout(timeoutId);
+            activeTimeouts.delete(timeoutId);
+        }
+        
+        function safeSetInterval(callback, delay) {
+            const intervalId = setInterval(callback, delay);
+            activeIntervals.add(intervalId);
+            return intervalId;
+        }
+        
+        function safeClearInterval(intervalId) {
+            clearInterval(intervalId);
+            activeIntervals.delete(intervalId);
+        }
+        
+        // Global cleanup function
+        function performGlobalCleanup() {
+            console.log('Performing global cleanup...');
+            
+            // Clear all active timeouts
+            activeTimeouts.forEach(timeoutId => {
+                clearTimeout(timeoutId);
+            });
+            activeTimeouts.clear();
+            
+            // Clear all active intervals
+            activeIntervals.forEach(intervalId => {
+                clearInterval(intervalId);
+            });
+            activeIntervals.clear();
+            
+            // Cleanup audio element
+            cleanupGlobalAudioElement();
+            
+            // Clear persistent data
+            if (typeof persistentSounds !== 'undefined') {
+                persistentSounds.clear();
+            }
+            if (typeof persistentBlinking !== 'undefined') {
+                persistentBlinking.clear();
+            }
+            
+            // Clear animation frame
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            
+            // Cleanup resize observer
+            if (resizeObserver) {
+                resizeObserver.disconnect();
+                resizeObserver = null;
+            }
+            
+            // Clear semua blinking tracking
+            blinkingShapes.clear();
+            
+            // Reset semua shapes blinking state
+            shapes.forEach(shape => {
+                shape.blinking = false;
+            });
+            
+            console.log('Global cleanup completed');
+        }
 
         // Load display config
         async function loadDisplayConfig() {
@@ -476,46 +599,30 @@
                     ctx.fillStyle = baseColor;
                     ctx.globalAlpha = alpha; // Fade effect dari transparan ke opaque
                 } else {
-                    // Shape default transparan (tidak terlihat)
+                    // Shape tidak terlihat sama sekali saat tidak blinking
                     ctx.fillStyle = baseColor;
-                    ctx.globalAlpha = 0; // Transparan penuh
+                    ctx.globalAlpha = 0; // Sepenuhnya transparan - tidak terlihat
                 }
                 
                 ctx.fill();
                 
-                // Text label dengan kontras yang lebih baik
-                ctx.globalAlpha = 1;
-                ctx.font = 'bold 11px sans-serif';
-                
-                // Dynamic text color berdasarkan background
+                // Text label hanya untuk shape yang blinking
                 if (shape.blinking) {
+                    ctx.globalAlpha = 1;
+                    ctx.font = 'bold 14px sans-serif';
+                    
+                    // Dynamic text color berdasarkan background untuk blinking
                     const now = Date.now();
                     const blinkCycle = (now % 1000) / 1000;
                     ctx.fillStyle = Math.sin(blinkCycle * Math.PI * 4) > 0 ? '#000000' : '#ffffff';
-                } else {
-                    // Gunakan warna kontras yang baik
-                    const brightness = getBrightness(baseColor);
-                    ctx.fillStyle = brightness > 128 ? '#000000' : '#ffffff';
-                }
-                
+                    
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     
-                // Tampilkan hanya tipe shape saat blinking, tampilkan kode dan tipe saat normal
-                if (shape.blinking) {
                     // Hanya tampilkan tipe shape (NC, KM, CB) saat blinking
                     ctx.fillText(shape.type, shape.x, shape.y);
-                } else {
-                    // Tampilkan kode dan tipe dengan spacing yang proporsional saat tidak blinking
-                    const lines = [shape.code, shape.type];
-                    const lineHeight = 12;
-                    const totalHeight = lines.length * lineHeight;
-                    const startY = shape.y - totalHeight / 2 + lineHeight / 2;
-                    
-                    lines.forEach((line, index) => {
-                        ctx.fillText(line, shape.x, startY + index * lineHeight);
-                    });
                 }
+                // Tidak ada text untuk shape yang tidak blinking
                 
                 ctx.restore();
             });
@@ -587,8 +694,14 @@
             console.log('📋 [DISPLAY] Current shapes available:', shapes.length, shapes.map(s => s.code));
             console.log('📊 [DISPLAY] Current activeAlerts:', activeAlerts.length, activeAlerts.map(a => ({ code: a.code, status: a.status })));
             
-            // Process call menggunakan fungsi processCall yang sudah ada (ini akan handle sound + call history)
-            processCall(code);
+            // CRITICAL FIX: Process call dengan error handling untuk debug
+            try {
+                console.log('📞 [DISPLAY] Calling processCall for code:', code);
+                processCall(code);
+                console.log('✅ [DISPLAY] processCall completed for code:', code);
+            } catch (error) {
+                console.error('❌ [DISPLAY] Error in processCall for code:', code, error);
+            }
             
             // ADDITIONAL: Handle kode panggilan untuk shape blinking - DIRECT IMMEDIATE BLINKING
             if (code.startsWith('10')) {
@@ -691,12 +804,20 @@
                 console.log('⚠️ [DISPLAY] Active alerts updated:', activeAlerts.length, 'alerts');
                 console.log('📋 [DISPLAY] Current active alerts statuses:', activeAlerts.map(a => ({ code: a.code, status: a.status })));
                 
-                // ONLY trigger blinking for NEW active alerts (not completed ones)
+                // Handle popup notifications berdasarkan perubahan active alerts
                 activeAlerts.forEach(alert => {
                     if (alert.status === 'active') {
                         const wasAlreadyActive = previousActiveAlerts.find(prev => prev.code === alert.code && prev.status === 'active');
                         if (!wasAlreadyActive) {
-                            console.log('🔔 [DISPLAY] New active alert detected:', alert.code, '- triggering blinking');
+                            console.log('🔔 [DISPLAY] New active alert detected:', alert.code, '- triggering blinking AND popup');
+                            
+                            // Show notification popup untuk alert baru
+                            showNotificationPopup({
+                                code: alert.code,
+                                room: alert.room,
+                                bed: alert.bed,
+                                time: alert.time
+                            });
                             
                             // Find and start blinking for the shape
                             const shape = shapes.find(s => s.code === alert.code);
@@ -719,6 +840,15 @@
                             }
                         }
                     } else if (alert.status === 'completed') {
+                        // Check if this was previously active (just completed)
+                        const wasActive = previousActiveAlerts.find(prev => prev.code === alert.code && prev.status === 'active');
+                        if (wasActive) {
+                            console.log('✅ [DISPLAY] Alert completed:', alert.code, '- triggering completed popup');
+                            
+                            // Show "Telah Ditangani" popup
+                            resetNotification(alert.code);
+                        }
+                        
                         // Stop blinking for completed alerts
                         const shape = shapes.find(s => s.code === alert.code);
                         if (shape && shape.blinking) {
@@ -730,7 +860,7 @@
                     }
                 });
                 
-                // Update notification popups based on active alerts
+                // Update notification popups based on active alerts (fallback)
                 updateNotificationPopups();
             }
             
@@ -811,27 +941,29 @@
             }, 100);
         });
 
-        // Cleanup saat window ditutup
+        // Cleanup saat window ditutup - ENHANCED VERSION
         window.addEventListener('beforeunload', () => {
-            // Clear animation frame
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
-                animationFrameId = null;
+            console.log('Display window beforeunload - performing cleanup');
+            performGlobalCleanup();
+        });
+        
+        window.addEventListener('unload', () => {
+            console.log('Display window unload - final cleanup');
+            performGlobalCleanup();
+        });
+        
+        // Also listen for page hide/show for better mobile support
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                console.log('Display page hidden - performing partial cleanup');
+                // Don't do full cleanup, just pause non-critical operations
+                activeTimeouts.forEach(timeoutId => {
+                    if (timeoutId !== dateTimeInterval) {
+                        clearTimeout(timeoutId);
+                        activeTimeouts.delete(timeoutId);
+                    }
+                });
             }
-            
-            // Cleanup resize observer
-            if (resizeObserver) {
-                resizeObserver.disconnect();
-                resizeObserver = null;
-            }
-            
-            // Clear semua blinking tracking
-            blinkingShapes.clear();
-            
-            // Reset semua shapes blinking state
-            shapes.forEach(shape => {
-                shape.blinking = false;
-            });
         });
 
         // Update current time and date
@@ -847,16 +979,32 @@
             if (dateEl) dateEl.textContent = dateStr;
         }
 
+        // Use safe interval for datetime updates
+        const dateTimeInterval = safeSetInterval(updateDateTime, 1000);
+        updateDateTime();
+
         // Global audio element reference
         let globalAudioElement = null;
         let audioElementInitialized = false;
 
-        // Function to ensure global audio element exists
+        // Function to ensure global audio element exists - FIXED MEMORY LEAK
         function ensureGlobalAudioElement() {
             if (!globalAudioElement || globalAudioElement.parentNode === null) {
+                // CRITICAL FIX: Cleanup existing listeners before creating new element
+                if (globalAudioElement && globalAudioElement.parentNode) {
+                    // Remove all event listeners to prevent memory leaks
+                    const newElement = globalAudioElement.cloneNode(false);
+                    globalAudioElement.parentNode.replaceChild(newElement, globalAudioElement);
+                    globalAudioElement = null;
+                }
+
                 // Remove any existing audio element dengan ID yang sama
                 const existingAudio = document.getElementById('persistent-audio');
                 if (existingAudio) {
+                    // Clean up event listeners before removal
+                    existingAudio.pause();
+                    existingAudio.src = '';
+                    existingAudio.load(); // Reset audio element
                     existingAudio.remove();
                 }
                 
@@ -867,24 +1015,31 @@
                 document.body.appendChild(globalAudioElement);
                 console.log('Created global persistent audio element in display.html');
                 
-                // Set up permanent event listeners
-                globalAudioElement.addEventListener('ended', function() {
+                // Set up permanent event listeners with proper cleanup handling
+                const endedHandler = function() {
                     const code = this.dataset.currentCode;
                     const currentIndex = parseInt(this.dataset.currentIndex);
                     console.log('Global audio ended:', code, currentIndex);
                     if (code && !isNaN(currentIndex)) {
                         ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                     }
-                });
+                };
                 
-                globalAudioElement.addEventListener('error', function(error) {
+                const errorHandler = function(error) {
                     const code = this.dataset.currentCode;
                     const currentIndex = parseInt(this.dataset.currentIndex);
                     console.error('Global audio error:', error);
                     if (code && !isNaN(currentIndex)) {
                         ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                     }
-                });
+                };
+                
+                // Store handlers for cleanup later
+                globalAudioElement._endedHandler = endedHandler;
+                globalAudioElement._errorHandler = errorHandler;
+                
+                globalAudioElement.addEventListener('ended', endedHandler);
+                globalAudioElement.addEventListener('error', errorHandler);
                 
                 globalAudioElement.addEventListener('loadstart', function() {
                     console.log('Audio loading started in display.html');
@@ -902,6 +1057,26 @@
                 }
             }
             return globalAudioElement;
+        }
+
+        // ADDED: Cleanup function for audio element
+        function cleanupGlobalAudioElement() {
+            if (globalAudioElement) {
+                globalAudioElement.pause();
+                globalAudioElement.src = '';
+                globalAudioElement.load();
+                if (globalAudioElement._endedHandler) {
+                    globalAudioElement.removeEventListener('ended', globalAudioElement._endedHandler);
+                }
+                if (globalAudioElement._errorHandler) {
+                    globalAudioElement.removeEventListener('error', globalAudioElement._errorHandler);
+                }
+                if (globalAudioElement.parentNode) {
+                    globalAudioElement.parentNode.removeChild(globalAudioElement);
+                }
+                globalAudioElement = null;
+                audioElementInitialized = false;
+            }
         }
 
         // Listen for persistent audio playback commands
@@ -1090,16 +1265,27 @@
                 console.log('🔔 [DISPLAY] Step 3: Loading notification settings...');
                 await loadNotificationSettings();
                 
-                // Step 4: Set initial container position
+                // Step 4: Set initial container position dengan fallback yang baik
                 const container = document.getElementById('notification-popup-container');
                 if (container) {
-                    setContainerPosition(container, notificationSettings.position);
-                    console.log('🎯 [DISPLAY] Initial container position set on startup');
+                    const initialPosition = notificationSettings.position || 'top-right';
+                    setContainerPosition(container, initialPosition);
+                    console.log('🎯 [DISPLAY] Initial container position set on startup to:', initialPosition);
+                } else {
+                    console.warn('⚠️ [DISPLAY] Notification container not found during startup');
                 }
                 
                 // Step 5: Load active alerts and call history from main process
                 console.log('📊 [DISPLAY] Step 5: Loading active alerts from main...');
                 await loadActiveAlertsFromMain();
+                
+                // Show notification about loaded history
+                const historyLoadedCount = callHistory.length;
+                if (historyLoadedCount > 0) {
+                    console.log('📊 [DISPLAY] Call history loaded at startup:', historyLoadedCount, 'entries');
+                } else {
+                    console.log('🆕 [DISPLAY] Starting with empty call history');
+                }
                 
                 // Step 6: Trigger blinking for any existing active alerts after shapes are loaded
                 if (shapes.length > 0) {
@@ -1128,9 +1314,9 @@
                     console.log('🔊 [DISPLAY] Audio restoration completed:', restorationResult.status);
                 }
                 
-                // Step 10: Setup datetime update
-                updateDateTime();
-                setInterval(updateDateTime, 1000);
+                // Step 10: Setup datetime update - ALREADY SETUP ABOVE
+                // updateDateTime();
+                // setInterval(updateDateTime, 1000); // REMOVED - already setup with safeSetInterval
                 
                 console.log('✅ [DISPLAY] Initialization completed successfully');
                 console.log('📊 [DISPLAY] Final state:', {
@@ -1251,6 +1437,13 @@
                     console.log('🔧 [DISPLAY] Loading notification settings from config:', config.notificationSettings);
                     notificationSettings = { ...notificationSettings, ...config.notificationSettings };
                     console.log('🔧 [DISPLAY] Final notification settings:', notificationSettings);
+                    
+                    // Update container position immediately after loading settings
+                    const container = document.getElementById('notification-popup-container');
+                    if (container) {
+                        setContainerPosition(container, notificationSettings.position);
+                        console.log('🎯 [DISPLAY] Container position set after loading settings:', notificationSettings.position);
+                    }
                 } else {
                     console.log('🔧 [DISPLAY] No notification settings in config, using defaults:', notificationSettings);
                 }
@@ -1269,36 +1462,40 @@
             container.style.left = '';
             container.style.right = '';
             
-            // Apply position based on settings
+            // Get window dimensions
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            
+            // CRITICAL FIX: Calculate better padding untuk visibility - lebih jauh dari edge  
+            // ENHANCED padding untuk better visibility, especially for completed notifications
+            const paddingX = Math.max(50, Math.round(windowWidth * 0.04)); // Increased to 4% with 50px minimum
+            const paddingY = Math.max(30, Math.round(windowHeight * 0.03)); // Increased to 3% with 30px minimum
+            
+            // Apply position based on settings with improved padding
             switch (position) {
                 case 'top-right':
-                    container.style.top = '24px';
-                    container.style.right = '24px';
+                    container.style.top = `${paddingY}px`;
+                    container.style.right = `${paddingX}px`;
                     break;
                 case 'top-left':
-                    container.style.top = '24px';
-                    container.style.left = '24px';
+                    container.style.top = `${paddingY}px`;
+                    container.style.left = `${paddingX}px`;
                     break;
                 case 'bottom-right':
-                    container.style.bottom = '24px';
-                    container.style.right = '24px';
+                    container.style.bottom = `${paddingY}px`;
+                    container.style.right = `${paddingX}px`;
                     break;
                 case 'bottom-left':
-                    container.style.bottom = '24px';
-                    container.style.left = '24px';
+                    container.style.bottom = `${paddingY}px`;
+                    container.style.left = `${paddingX}px`;
                     break;
                 default:
-                    // Default to top-right if no valid position
-                    container.style.top = '24px';
-                    container.style.right = '24px';
+                    // Default to top-right if no valid position dengan improved padding
+                    container.style.top = `${paddingY}px`;
+                    container.style.right = `${paddingX}px`;
             }
             
-            console.log('🎯 [DISPLAY] Container position set to:', position, 'with styles:', {
-                top: container.style.top,
-                bottom: container.style.bottom,
-                left: container.style.left,
-                right: container.style.right
-            });
+            console.log('🎯 [DISPLAY] Container positioned at:', position, 'with padding:', { x: paddingX, y: paddingY });
         }
         
         // Load active alerts from main process
@@ -1372,24 +1569,24 @@
         }
 
         // Notification Functions
-                    function showNotificationPopup(data) {
-                console.log('🎯 [DISPLAY] showNotificationPopup called with data:', {
-                    code: data.code,
-                    room: data.room,
-                    bed: data.bed,
-                    time: data.time
-                });
-                
-                const container = document.getElementById('notification-popup-container');
-                if (!container) {
-                    console.error('Notification container not found');
-                    return;
-                }
+        function showNotificationPopup(data) {
+            console.log('🎯 [DISPLAY] showNotificationPopup called with data:', {
+                code: data.code,
+                room: data.room,
+                bed: data.bed,
+                time: data.time
+            });
+            
+            const container = document.getElementById('notification-popup-container');
+            if (!container) {
+                console.error('Notification container not found');
+                return;
+            }
 
-                // Check if notification already exists for this code
-                const existingPopup = document.querySelector(`[data-code="${data.code}"]`);
-                if (existingPopup) {
-                    console.log('⚠️ [DISPLAY] Popup already exists for code:', data.code, 'skipping creation');
+            // Check if notification already exists for this code
+            const existingPopup = document.querySelector(`[data-code="${data.code}"]`);
+            if (existingPopup) {
+                console.log('⚠️ [DISPLAY] Popup already exists for code:', data.code, 'keeping existing popup');
                 return;
             }
 
@@ -1403,45 +1600,51 @@
                 animationSpeed: 500
             };
 
-            // Update container position based on settings
-            container.className = 'fixed z-50 w-80 flex flex-col gap-2 pointer-events-auto';
-            setContainerPosition(container, settings.position);
+            // CRITICAL FIX: Update container position using current notification settings (hanya jika belum di-set)
+            const currentPosition = container.style.top || container.style.bottom;
+            if (!currentPosition) {
+                // Only set position if not already positioned
+                setContainerPosition(container, notificationSettings.position || settings.position);
+                console.log('🎯 [DISPLAY] Initial container position set for popup');
+            } else {
+                console.log('🎯 [DISPLAY] Container already positioned, maintaining current position');
+            }
 
             // Create popup with active color
-                const popup = document.createElement('div');
-            popup.className = `notification-popup bg-${settings.activeColor}-50`;
-                popup.setAttribute('data-code', data.code);
-                
-                // Clean and format room and bed names
-                const cleanRoom = data.room.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim();
-                const cleanBed = data.bed.replace(/^(Bed|B\.)\s*/i, '').trim();
-                
-            // Create content with active color
-                popup.innerHTML = `
-                    <div class="flex justify-between items-start">
-                        <div class="flex-1">
-                            <div class="flex items-center">
+            const popup = document.createElement('div');
+            popup.className = `notification-popup bg-${settings.activeColor}-50 border-l-4 border-${settings.activeColor}-500 p-4 rounded-lg shadow-lg mb-3`;
+            popup.setAttribute('data-code', data.code);
+            
+            // Clean and format room and bed names
+            const cleanRoom = data.room.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim();
+            const cleanBed = data.bed.replace(/^(Bed|B\.)\s*/i, '').trim();
+            
+            // Create content with active color and animation
+            popup.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <div class="flex items-center">
                             <h3 class="font-bold text-lg text-${settings.activeColor}-800">Nurse Call</h3>
                             <span class="ml-2 px-2 py-0.5 bg-${settings.activeColor}-100 text-${settings.activeColor}-800 text-xs font-medium rounded-full">ACTIVE</span>
-                            </div>
+                        </div>
                         <p class="text-sm text-${settings.activeColor}-600 mt-1 font-medium">${cleanRoom}</p>
                         <p class="text-xs text-${settings.activeColor}-600 mt-0.5">${cleanBed}</p>
-                        </div>
-                        <div class="flex flex-col items-end">
+                    </div>
+                    <div class="flex flex-col items-end">
                         <span class="text-xs text-white px-2 py-1 rounded bg-${settings.activeColor}-500">${data.time}</span>
                         <span class="text-xs text-${settings.activeColor}-500 mt-1">Kode: ${data.code}</span>
-                        </div>
                     </div>
-                    <div class="mt-3 flex items-center justify-between">
-                        <div class="flex items-center">
-                        <span class="w-2 h-2 bg-${settings.activeColor}-500 rounded-full animate-pulse"></span>
+                </div>
+                <div class="mt-3 flex items-center justify-between">
+                    <div class="flex items-center">
+                        <span class="w-2 h-2 bg-${settings.activeColor}-500 rounded-full alert-pulse"></span>
                         <span class="ml-2 text-xs text-${settings.activeColor}-600 font-medium">Menunggu Response</span>
-                        </div>
-                    <button class="text-xs text-white px-3 py-1.5 rounded-full bg-${settings.activeColor}-500 hover:bg-${settings.activeColor}-600 transition-colors">
-                            <i class="fas fa-bell"></i> Active
-                        </button>
                     </div>
-                `;
+                    <button class="text-xs text-white px-3 py-1.5 rounded-full bg-${settings.activeColor}-500 hover:bg-${settings.activeColor}-600 transition-colors">
+                        <i class="fas fa-bell"></i> Active
+                    </button>
+                </div>
+            `;
 
             // Add animation class based on settings
             const animationClass = {
@@ -1454,19 +1657,31 @@
             popup.style.animationDuration = `${settings.animationSpeed}ms`;
             popup.classList.add(animationClass);
 
-                // Add to container
-                container.appendChild(popup);
+            // Add to container
+            container.appendChild(popup);
 
-                // Store reference for reset handling
-                activeNotifications.set(data.code, popup);
-            }
+            // Auto-hide popup panggilan setelah 3 detik
+            setTimeout(() => {
+                popup.classList.add('hide');
+                setTimeout(() => {
+                    if (popup.parentNode) {
+                        popup.parentNode.removeChild(popup);
+                        activeNotifications.delete(data.code);
+                        console.log('🗑️ [DISPLAY] Call notification popup auto-removed after 3 seconds for code:', data.code);
+                    }
+                }, settings.animationSpeed);
+            }, 3000); // Fixed 3 seconds for call popup
+
+            // Store reference for reset handling
+            activeNotifications.set(data.code, popup);
+        }
 
         // Function to handle reset notification with applied settings
-            function resetNotification(code) {
-                const popup = activeNotifications.get(code);
-                if (popup) {
-                    console.log('🔄 [DISPLAY] Updating notification popup to "completed" for reset code:', code);
-                    
+        function resetNotification(code) {
+            const popup = activeNotifications.get(code);
+            if (popup) {
+                console.log('🔄 [DISPLAY] Updating notification popup to "completed" for reset code:', code);
+                
                 // Load notification settings
                 const settings = notificationSettings || {
                     position: 'top-right',
@@ -1477,113 +1692,147 @@
                     animationSpeed: 500
                 };
                 
-                // Ensure container position is maintained
-                const container = document.getElementById('notification-popup-container');
-                setContainerPosition(container, settings.position);
-
-                // Update status to completed with completed color
-                popup.classList.remove(`bg-${settings.activeColor}-50`);
-                popup.classList.add(`bg-${settings.completedColor}-50`);
-                    
-                    // Get data for display
-                    const data = masterData.find(d => d.charCode === code);
-                    const cleanRoom = data ? data.roomName.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim() : 'Unknown';
-                    const cleanBed = data ? data.bedName.replace(/^(Bed|B\.)\s*/i, '').trim() : 'Unknown';
-                    const now = new Date();
-                    const currentTime = now.toLocaleTimeString('en-US', { hour12: false });
-                    
-                // Update content with completed color
-                    popup.innerHTML = `
-                        <div class="flex justify-between items-start">
-                            <div class="flex-1">
-                                <div class="flex items-center">
-                                <h3 class="font-bold text-lg text-${settings.completedColor}-800">Telah Ditangani</h3>
-                                </div>
-                            <p class="text-sm text-${settings.completedColor}-600 mt-1 font-medium">${cleanRoom}</p>
-                            <p class="text-xs text-${settings.completedColor}-600 mt-0.5">${cleanBed}</p>
-                            </div>
-                            <div class="flex flex-col items-end">
-                            <span class="text-xs text-white px-2 py-1 rounded bg-${settings.completedColor}-500">${currentTime}</span>
-                            <span class="text-xs text-${settings.completedColor}-500 mt-1">Nurse Call</span>
-                            </div>
-                        </div>
-                        <div class="mt-3 flex items-center justify-between">
-                            <div class="flex items-center">
-                            <span class="w-2 h-2 bg-${settings.completedColor}-500 rounded-full"></span>
-                            <span class="ml-2 text-xs text-${settings.completedColor}-600 font-medium">Telah di Respon</span>
-                            </div>
-                        <button class="text-xs text-white px-3 py-1.5 rounded-full bg-${settings.completedColor}-500 transition-colors">
-                                <i class="fas fa-check"></i> Selesai
-                            </button>
-                        </div>
-                    `;
-
-                // Remove after configured duration
-                    setTimeout(() => {
-                        popup.classList.add('hide');
-                        setTimeout(() => {
-                            if (popup.parentNode) {
-                                popup.parentNode.removeChild(popup);
-                                activeNotifications.delete(code);
-                                console.log('🗑️ [DISPLAY] Notification popup removed after completed state for code:', code);
-                            }
-                    }, settings.animationSpeed);
-                }, settings.showDuration * 1000);
-                }
-            }
-
-            // Map to track active notifications
-            const activeNotifications = new Map();
-            
-            // Function to update notification popups berdasarkan active alerts
-            function updateNotificationPopups() {
-                console.log('🔄 [DISPLAY] Updating notification popups, active alerts:', activeAlerts.length);
-                
-                // Ensure container position is set correctly
+                // CRITICAL FIX: Reposition container to ensure better visibility for completed popup
                 const container = document.getElementById('notification-popup-container');
                 if (container) {
-                    setContainerPosition(container, notificationSettings.position);
-                }
-                
-                // Debug: Log semua alerts dengan status mereka
-                activeAlerts.forEach(alert => {
-                    console.log('🔍 [DISPLAY] Alert status check:', {
-                        code: alert.code,
-                        status: alert.status,
-                        hasPopup: activeNotifications.has(alert.code),
-                        room: alert.room,
-                        bed: alert.bed
-                    });
-                });
-                
-                // Show popups untuk alerts yang active
-                activeAlerts.forEach(alert => {
-                    if (alert.status === 'active' && !activeNotifications.has(alert.code)) {
-                        console.log('📢 [DISPLAY] Creating popup for active alert:', alert.code, 'Status:', alert.status);
-                        showNotificationPopup({
-                            code: alert.code,
-                            room: alert.room,
-                            bed: alert.bed,
-                            time: alert.time
-                        });
-                    } else if (alert.status === 'completed' && activeNotifications.has(alert.code)) {
-                        console.log('✅ [DISPLAY] Updating popup to completed for:', alert.code, 'Status:', alert.status);
-                        resetNotification(alert.code);
+                    // Use enhanced positioning specifically for completed notifications
+                    const windowWidth = window.innerWidth;
+                    const windowHeight = window.innerHeight;
+                    
+                    // ENHANCED padding for completed notifications - move further left for better visibility
+                    const paddingX = Math.max(80, Math.round(windowWidth * 0.06)); // Increased to 6% with 80px minimum
+                    const paddingY = Math.max(40, Math.round(windowHeight * 0.04)); // Increased to 4% with 40px minimum
+                    
+                    // Clear existing position
+                    container.style.top = '';
+                    container.style.bottom = '';
+                    container.style.left = '';
+                    container.style.right = '';
+                    
+                    // Apply enhanced position for better visibility
+                    switch (notificationSettings.position || settings.position) {
+                        case 'top-right':
+                            container.style.top = `${paddingY}px`;
+                            container.style.right = `${paddingX}px`;
+                            break;
+                        case 'top-left':
+                            container.style.top = `${paddingY}px`;
+                            container.style.left = `${paddingX}px`;
+                            break;
+                        case 'bottom-right':
+                            container.style.bottom = `${paddingY}px`;
+                            container.style.right = `${paddingX}px`;
+                            break;
+                        case 'bottom-left':
+                            container.style.bottom = `${paddingY}px`;
+                            container.style.left = `${paddingX}px`;
+                            break;
+                        default:
+                            container.style.top = `${paddingY}px`;
+                            container.style.right = `${paddingX}px`;
                     }
-                });
+                    
+                    console.log('🎯 [DISPLAY] Enhanced container position for completed popup:', {
+                        position: notificationSettings.position || settings.position,
+                        padding: { x: paddingX, y: paddingY }
+                    });
+                }
+
+                // Update status to completed with completed color and static appearance (no animation)
+                popup.className = `notification-popup bg-${settings.completedColor}-50 border-l-4 border-${settings.completedColor}-500 p-4 rounded-lg shadow-xl mb-3`;
+                popup.style.opacity = '1';
+                popup.style.transform = 'translateX(0)';
+                popup.style.zIndex = '10000';
+                popup.style.animation = 'none'; // Remove any blinking animations
                 
-                // Remove popups untuk alerts yang sudah tidak ada
-                const activeCodes = new Set(activeAlerts.map(a => a.code));
-                activeNotifications.forEach((popup, code) => {
-                    if (!activeCodes.has(code)) {
-                        console.log('🗑️ [DISPLAY] Removing orphaned popup for:', code);
+                // Get data for display - try from active alert first, then master data
+                let data = activeAlerts.find(alert => alert.code === code);
+                let cleanRoom, cleanBed;
+                
+                if (data) {
+                    // Use data from active alert (already cleaned)
+                    cleanRoom = data.room;
+                    cleanBed = data.bed;
+                } else {
+                    // Fallback to master data
+                    const masterItem = masterData.find(d => d.charCode === code);
+                    cleanRoom = masterItem ? masterItem.roomName.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim() : 'Unknown';
+                    cleanBed = masterItem ? masterItem.bedName.replace(/^(Bed|B\.)\s*/i, '').trim() : 'Unknown';
+                }
+                const now = new Date();
+                const currentTime = now.toLocaleTimeString('en-US', { hour12: false });
+                
+                // Update content with completed color and static visibility (no blinking)
+                popup.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <div class="flex items-center">
+                                <h3 class="font-bold text-lg text-${settings.completedColor}-800">Telah Ditangani</h3>
+                                <span class="ml-2 px-2 py-0.5 bg-${settings.completedColor}-100 text-${settings.completedColor}-800 text-xs font-medium rounded-full">COMPLETED</span>
+                            </div>
+                            <p class="text-sm text-${settings.completedColor}-600 mt-1 font-medium">${cleanRoom}</p>
+                            <p class="text-xs text-${settings.completedColor}-600 mt-0.5">${cleanBed}</p>
+                        </div>
+                        <div class="flex flex-col items-end">
+                            <span class="text-xs text-white px-2 py-1 rounded bg-${settings.completedColor}-500">${currentTime}</span>
+                            <span class="text-xs text-${settings.completedColor}-500 mt-1">Nurse Call</span>
+                        </div>
+                    </div>
+                    <div class="mt-3 flex items-center justify-between">
+                        <div class="flex items-center">
+                            <span class="w-2 h-2 bg-${settings.completedColor}-500 rounded-full opacity-100"></span>
+                            <span class="ml-2 text-xs text-${settings.completedColor}-600 font-medium">Telah di Respon</span>
+                        </div>
+                        <button class="text-xs text-white px-3 py-1.5 rounded-full bg-${settings.completedColor}-500 transition-colors">
+                            <i class="fas fa-check"></i> Selesai
+                        </button>
+                    </div>
+                `;
+
+                // Remove popup "Telah Ditangani" setelah 3 detik
+                setTimeout(() => {
+                    popup.classList.add('hide');
+                    setTimeout(() => {
                         if (popup.parentNode) {
                             popup.parentNode.removeChild(popup);
+                            activeNotifications.delete(code);
+                            console.log('🗑️ [DISPLAY] Completed notification popup removed after 3 seconds for code:', code);
                         }
-                        activeNotifications.delete(code);
-                    }
-                });
+                    }, settings.animationSpeed);
+                }, 3000); // Fixed 3 seconds for completed popup
             }
+        }
+
+        // Map to track active notifications
+        const activeNotifications = new Map();
+        
+        // Function to update notification popups berdasarkan active alerts (fallback only)
+        function updateNotificationPopups() {
+            console.log('🔄 [DISPLAY] Fallback popup update check, active alerts:', activeAlerts.length);
+            
+            // CRITICAL FIX: Ensure container position is set correctly with fallback
+            const container = document.getElementById('notification-popup-container');
+            if (container) {
+                // Prioritaskan notificationSettings.position dengan fallback yang tepat
+                const targetPosition = notificationSettings.position || 'top-right';
+                setContainerPosition(container, targetPosition);
+                console.log('🎯 [DISPLAY] Container position updated in updateNotificationPopups:', targetPosition);
+            }
+            
+            // Remove popups untuk alerts yang sudah tidak ada (cleanup only)
+            const activeCodes = new Set(activeAlerts.map(a => a.code));
+            activeNotifications.forEach((popup, code) => {
+                if (!activeCodes.has(code)) {
+                    console.log('🗑️ [DISPLAY] Removing orphaned popup for:', code);
+                    if (popup.parentNode) {
+                        popup.parentNode.removeChild(popup);
+                    }
+                    activeNotifications.delete(code);
+                }
+            });
+            
+            console.log('📊 [DISPLAY] Popup cleanup completed. Active popups:', activeNotifications.size);
+        }
 
         // Function untuk set standby indicator
         function setStandbyIndicator(color) {
@@ -1661,42 +1910,60 @@
 
         // Process call function - main logic for handling all codes
         async function processCall(code) {
-            console.log('Processing call with code:', code);
+            console.log('🚀 [DISPLAY] Processing call with code:', code);
             
             // Khusus untuk kode standby
             if (code === '99' || code === '99:') {
+                const wasInStandby = standbyMode;
+                
+                // Set standby mode dan indikator
                 standbyMode = true;
                 setStandbyIndicator('green');
                 setTimeout(() => {
                     setStandbyIndicator('yellow');
                 }, 500);
+                
+                // Hanya update indikator tanpa notifikasi
                 console.log('Entered standby mode - indicator updated');
                 return;
             }
 
             // Khusus untuk kode 100 (keluar dari standby)
             if (code === '100') {
+                const wasInStandby = standbyMode;
                 standbyMode = false;
                 updateConnectionStatus();
-                lastStandbyNotification = null;
+                
+                // Hanya update indikator tanpa notifikasi
                 console.log('Exited standby mode - indicator updated');
+                
+                // Reset standby notification state
+                lastStandbyNotification = null;
                 return;
             }
             
             // Untuk kode reset (90x atau 90xx)
             if (code.startsWith('90')) {
+                console.log('🛑 [DISPLAY] RESET CODE DETECTED! Processing reset for:', code);
                 const bedNumber = code.substring(2);
                 const originalCode = `10${bedNumber}`;
                 
-                console.log('Reset code detected:', code, '→ Original code:', originalCode);
+                console.log('🔄 [DISPLAY] Reset code detected:', code, '→ Original code:', originalCode);
+                console.log('🔍 [DISPLAY] Current active alerts before reset:', activeAlerts.length);
                 
                 // Cari data di master data untuk validasi
+                console.log('🔍 [DISPLAY] Looking for master data for originalCode:', originalCode);
+                console.log('🔍 [DISPLAY] Master data count:', masterData.length);
                 const data = masterData.find(d => d.charCode === originalCode);
+                console.log('🔍 [DISPLAY] Found master data:', !!data, data ? 'valid' : 'not found');
+                
                 if (!isValidMasterData(data)) {
-                    console.log('Original code not found or incomplete in master data:', originalCode);
-                    showNotification('warning', `Kode ${originalCode} tidak ditemukan atau data tidak lengkap`);
+                    console.log('❌ [DISPLAY] Original code not found or incomplete in master data:', originalCode);
+                    console.log('🔍 [DISPLAY] Available master data codes:', masterData.map(d => d.charCode));
                     return;
                 }
+                
+                console.log('✅ [DISPLAY] Master data validation passed for:', originalCode);
 
                 // STOP AUDIO IMMEDIATELY
                 console.log('Stopping persistent sound for code:', originalCode);
@@ -1712,7 +1979,7 @@
                     renderShapes();
                 }
                 
-                // Update call history dan active alerts
+                // Update call history untuk reset
                 const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode);
                 if (alertIndex !== -1) {
                     const now = new Date();
@@ -1726,27 +1993,43 @@
                         callHistory[historyIndex].resetTimeStr = resetTimeStr;
                     }
                     
-                    // Update active alert
+                    // Update active alert dan simpan reference untuk notifikasi
+                    const alertDisplayText = activeAlerts[alertIndex].display;
                     activeAlerts[alertIndex].status = 'completed';
                     activeAlerts[alertIndex].resetTime = now;
                     activeAlerts[alertIndex].resetTimeStr = resetTimeStr;
                     
-                    // Kirim update ke main process
+                    // SEGERA kirim update ke main process untuk sinkronisasi real-time
                     await updateCallHistoryToMain();
                     
-                    // Tampilkan notifikasi reset
-                    const displayText = `${data.roomName} - ${data.bedName}`;
-                    showNotification('reset', displayText);
+                                    // Tampilkan notifikasi OS untuk reset - ENHANCED FORMAT
+                showEnhancedOSNotification(originalCode, 'reset');
+                
+                // NOTE: Popup "Telah Ditangani" akan ditampilkan oleh active alerts sync, bukan di sini
                     
-                    // Hapus dari active alerts setelah delay
+                    // Hapus dari active alerts setelah configured duration
+                    const completedRemoveDelay = (notificationSettings.showDuration || 30) * 1000;
                     setTimeout(async () => {
                         const idx = activeAlerts.findIndex(a => a.id === activeAlerts[alertIndex].id);
                         if (idx !== -1) {
                             activeAlerts.splice(idx, 1);
+                            // Update main process lagi setelah hapus dari active alerts
                             await updateCallHistoryToMain();
                         }
-                    }, 3000);
+                    }, completedRemoveDelay); // Use configured duration instead of hardcoded 3000
+                    
+                    console.log(`🔄 [DISPLAY] Reset alert ${originalCode} marked as completed and will be removed in ${completedRemoveDelay/1000} seconds`);
+                    console.log(`📊 [DISPLAY] Broadcasting update - Active alerts: ${activeAlerts.length}, Call history: ${callHistory.length}`);
                 }
+                
+                // Remove dari persistent tracking
+                if (persistentSounds.has(originalCode)) {
+                    persistentSounds.delete(originalCode);
+                    console.log('🗑️ [DISPLAY] Removed from persistent sounds:', originalCode);
+                }
+                
+                // Update ke main process
+                updatePersistentStateToMain();
                 
                 return;
             }
@@ -1759,14 +2042,27 @@
                 const data = masterData.find(d => d.charCode === code);
                 if (!isValidMasterData(data)) {
                     console.log('Call code not found or incomplete in master data:', code);
-                    showNotification('warning', `Kode ${code} tidak ditemukan atau data tidak lengkap`);
                     return;
                 }
-
+                
                 // Cek apakah panggilan sudah aktif
                 const existingAlert = activeAlerts.find(alert => alert.code === code && alert.status === 'active');
                 if (existingAlert) {
                     console.log('Call already active:', code);
+                    return;
+                }
+
+                // TAMBAHAN: Cek apakah panggilan ini sudah pernah ditangani sebelumnya
+                const recentlyHandled = callHistory.find(call => 
+                    call.code === code && 
+                    call.status === 'completed' && 
+                    call.resetTime && 
+                    (Date.now() - new Date(call.resetTime).getTime() < 5000) // 5 detik threshold
+                );
+
+                if (recentlyHandled) {
+                    console.log('🚫 [DISPLAY] Call was recently handled, ignoring:', code);
+                    console.log('⏱️ [DISPLAY] Time since reset:', Math.round((Date.now() - new Date(recentlyHandled.resetTime).getTime()) / 1000), 'seconds ago');
                     return;
                 }
                 
@@ -1780,27 +2076,16 @@
                     }
                 }, 500);
 
-                // START BLINKING
-                const targetShape = shapes.find(s => s.code === code);
-                if (targetShape) {
-                    targetShape.blinking = true;
-                    blinkingShapes.set(code, true);
-                    persistentBlinking.set(code, true);
-                    if (!animationFrameId) {
-                        renderShapes();
-                    }
-                }
-
                 // Proses panggilan dan catat ke call history
                 const now = new Date();
                 const timeStr = formatDateTime(now);
                 
-                // Clean room and bed names
+                // Clean room and bed names - remove prefixes
                 const cleanRoom = data.roomName.replace(/^(R\.|Ruangan|Room)\s*/i, '').trim();
                 const cleanBed = data.bedName.replace(/^(Bed|B\.)\s*/i, '').trim();
                 const displayText = `${cleanRoom} - ${cleanBed}`;
                 
-                // Buat entry call history baru
+                // Buat entry call history baru dengan format yang lebih sederhana
                 const callEntry = {
                     id: Date.now(),
                     code: code,
@@ -1818,13 +2103,15 @@
                 callHistory.unshift(callEntry);
                 activeAlerts.push({...callEntry});
                 
-                // Kirim update ke main process
-                await updateCallHistoryToMain();
+                // Kirim update call history ke main process untuk dibagikan dengan index.html
+                updateCallHistoryToMain();
                 
-                // Tampilkan notifikasi
-                showNotification('call', displayText);
+                // Tampilkan notifikasi OS untuk alert baru - ENHANCED FORMAT
+                showEnhancedOSNotification(code, 'call');
                 
-                // Play sounds
+                // NOTE: Popup notification akan ditampilkan oleh active alerts sync, bukan di sini
+                
+                // Play sounds dan simpan ke persistent
                 const sounds = [];
                 if (data.v1) sounds.push(data.v1);
                 if (data.v2) sounds.push(data.v2);
@@ -1834,8 +2121,15 @@
                 if (data.v6) sounds.push(data.v6);
                 
                 if (sounds.length > 0) {
-                    console.log('Starting sound playback for code:', code);
-                    await ipcRenderer.invoke('play-persistent-sounds', { code, sounds });
+                    // Gunakan global audio player di main process
+                    console.log('Requesting persistent sound playback for code:', code);
+                    ipcRenderer.invoke('play-persistent-sounds', { code, sounds }).then(result => {
+                        if (result.success) {
+                            console.log('Persistent sound playback started for code:', code);
+                        } else {
+                            console.error('Failed to start persistent sound playback:', result.error);
+                        }
+                    });
                 }
             }
         }
@@ -1896,7 +2190,7 @@
                     </div>
                 `;
                 notification.classList.add('completed');
-                duration = 3000; // Shorter duration for reset notifications
+                duration = 3000; // Fixed 3 seconds for reset notifications
             } else {
                 // System notifications (warning, error, etc)
                 const bgColor = {
@@ -1923,7 +2217,7 @@
                     if (notification.parentNode) {
                         notification.parentNode.removeChild(notification);
                     }
-                }, 500);
+                }, notificationSettings.animationSpeed || 500);
             }, duration);
 
             return notification;
@@ -1991,15 +2285,30 @@
         });
 
         // Listen for notification settings updates
-        ipcRenderer.on('notification-settings-updated', async () => {
-            await loadNotificationSettings();
+        ipcRenderer.on('notification-settings-updated', async (event, newSettings) => {
+            console.log('🔔 [DISPLAY] Received notification settings update:', newSettings);
             
-            // Update container position immediately after settings are loaded
+            // Update local notification settings
+            notificationSettings = { ...notificationSettings, ...newSettings };
+            
+            // CRITICAL FIX: Update container position immediately dengan error handling
             const container = document.getElementById('notification-popup-container');
             if (container) {
-                setContainerPosition(container, notificationSettings.position);
-                console.log('🎯 [DISPLAY] Container position updated after settings change');
+                const newPosition = notificationSettings.position || 'top-right';
+                setContainerPosition(container, newPosition);
+                console.log('🎯 [DISPLAY] Container position updated after settings change to:', newPosition);
+                
+                // Force reposition any existing popups
+                const existingPopups = container.querySelectorAll('.notification-popup');
+                if (existingPopups.length > 0) {
+                    console.log('🔄 [DISPLAY] Repositioning', existingPopups.length, 'existing popups');
+                }
+            } else {
+                console.warn('⚠️ [DISPLAY] Notification container not found during settings update');
             }
+            
+            // Also reload from config to ensure consistency
+            await loadNotificationSettings();
         });
 
         // Test functions untuk debugging (opsional)

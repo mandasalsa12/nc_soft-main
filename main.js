@@ -304,17 +304,53 @@ function loadConfig() {
             fs.writeFileSync(configPath, JSON.stringify(initialData, null, 2));
             return initialData;
         }
+        
+        // SECURITY FIX: Validate file size before reading
+        const stats = fs.statSync(configPath);
+        if (stats.size > 10 * 1024 * 1024) { // 10MB limit
+            console.error('Config file too large, refusing to load:', stats.size);
+            throw new Error('Config file exceeds size limit');
+        }
+        
         const data = fs.readFileSync(configPath, 'utf-8');
+        
+        // SECURITY FIX: Validate JSON structure before parsing
+        if (!data.trim().startsWith('{') || !data.trim().endsWith('}')) {
+            console.error('Invalid config file format');
+            throw new Error('Invalid config file format');
+        }
+        
         const parsedData = JSON.parse(data);
+        
+        // SECURITY FIX: Validate required properties and structure
+        if (typeof parsedData !== 'object' || parsedData === null) {
+            throw new Error('Config must be an object');
+        }
+        
+        // Validate and sanitize masterData
+        if (parsedData.masterData && Array.isArray(parsedData.masterData)) {
+            parsedData.masterData = parsedData.masterData.filter(item => {
+                return typeof item === 'object' && item !== null && typeof item.charCode === 'string';
+            }).slice(0, 1000); // Limit array size
+        }
+        
+        // Validate and sanitize callHistoryStorage
+        if (parsedData.callHistoryStorage && Array.isArray(parsedData.callHistoryStorage)) {
+            parsedData.callHistoryStorage = parsedData.callHistoryStorage.filter(item => {
+                return typeof item === 'object' && item !== null && typeof item.code === 'string';
+            }).slice(0, 10000); // Limit array size
+        }
         
         // Ensure callHistoryStorage exists
         if (!parsedData.callHistoryStorage) {
             parsedData.callHistoryStorage = [];
         }
         
+        console.log('Config loaded and validated successfully');
         return parsedData;
     } catch (error) {
         console.error('Error loading config:', error);
+        // Return safe default config on error
         return {
             masterData: [],
             masterSettings: {},
@@ -329,11 +365,24 @@ function loadConfig() {
     }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     // Additional setup to suppress warnings
     app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
     
+    console.log('🚀 [MAIN] Application starting up...');
+    
+    // CRITICAL: Initialize persistent call history FIRST before creating windows
+    const historyLoaded = await initializePersistentCallHistory();
+    
+    if (historyLoaded) {
+        console.log('✅ [MAIN] Startup with persistent call history loaded');
+    } else {
+        console.log('🆕 [MAIN] Startup with fresh session (no persistent history)');
+    }
+    
     createMainWindow();
+    
+    console.log('🖥️ [MAIN] Main window created, application ready');
     
     // Fix macOS dock visibility issue (error code -50)
     if (process.platform === 'darwin') {
@@ -402,6 +451,48 @@ setInterval(async () => {
         console.error('Error in auto-save:', error);
     }
 }, 5 * 60 * 1000); // 5 minutes
+
+// ENHANCED: Load persistent call history into shared state at startup
+async function initializePersistentCallHistory() {
+    try {
+        console.log('🚀 [MAIN] Initializing persistent call history at startup...');
+        const config = loadConfig();
+        const persistentHistory = config.callHistoryStorage || [];
+        
+        if (persistentHistory.length > 0) {
+            // Load all persistent calls into shared state (convert ISO strings back to Date objects)
+            const allPersistentCalls = persistentHistory.map(call => ({
+                ...call,
+                timestamp: new Date(call.timestamp),
+                resetTime: call.resetTime ? new Date(call.resetTime) : null
+            }));
+            
+            // Set shared call history dengan semua data persisten
+            sharedCallHistory = allPersistentCalls;
+            
+            // Clear active alerts untuk startup (hanya completed calls yang dimuat)
+            sharedActiveAlerts = [];
+            
+            console.log(`✅ [MAIN] Loaded ${allPersistentCalls.length} persistent calls into shared state`);
+            console.log(`📋 [MAIN] Call history ready with date range:`, {
+                oldest: allPersistentCalls.length > 0 ? allPersistentCalls[allPersistentCalls.length - 1].time : 'none',
+                newest: allPersistentCalls.length > 0 ? allPersistentCalls[0].time : 'none'
+            });
+            
+            return true;
+        } else {
+            console.log('📭 [MAIN] No persistent call history found - starting fresh');
+            sharedCallHistory = [];
+            sharedActiveAlerts = [];
+            return false;
+        }
+    } catch (error) {
+        console.error('❌ [MAIN] Error initializing persistent call history:', error);
+        sharedCallHistory = [];
+        sharedActiveAlerts = [];
+        return false;
+    }
+}
 
 app.on('window-all-closed', async () => {
     // Save any remaining call history before closing
@@ -1033,20 +1124,33 @@ ipcMain.handle('audio-element-ready', async () => {
             return { success: true, status: 'sent_current_audio' };
         }
         
-        // Jika ada audio yang harus di-restore, lakukan sekarang
+        // Jika ada audio yang harus di-restore, lakukan sekarang dengan validasi
         if (currentlyPlayingAudio && !isAudioPlaying) {
-            console.log('[Audio] Auto-restoring audio after element ready');
+            console.log('[Audio] Auto-restoring audio after element ready, validating...');
             
-            // Restore and continue
-            currentAudioSequence = { ...currentlyPlayingAudio };
-            delete currentAudioSequence.timestamp;
-            isAudioPlaying = true;
-            sendAudioToAllWindows();
+            // CRITICAL: Validate if audio should still be restored
+            const audioCode = currentlyPlayingAudio.code;
+            const stillPersistent = persistentSounds.has(audioCode);
             
-            // Clear the saved state
-            currentlyPlayingAudio = null;
+            console.log(`[Audio] Auto-restore validation - Code: ${audioCode}, Still persistent: ${stillPersistent}`);
             
-            return { success: true, status: 'auto_restored' };
+            if (stillPersistent) {
+                // Restore and continue
+                currentAudioSequence = { ...currentlyPlayingAudio };
+                delete currentAudioSequence.timestamp;
+                isAudioPlaying = true;
+                sendAudioToAllWindows();
+                
+                // Clear the saved state
+                currentlyPlayingAudio = null;
+                
+                console.log('[Audio] Auto-restored valid audio sequence');
+                return { success: true, status: 'auto_restored' };
+            } else {
+                console.log('[Audio] Audio was reset during element ready, clearing saved state');
+                currentlyPlayingAudio = null;
+                return { success: true, status: 'auto_restore_audio_was_reset' };
+            }
         }
         
         return { success: true, status: 'ready_no_audio' };
@@ -1064,8 +1168,39 @@ ipcMain.handle('get-master-data', async () => {
 
 // Kirim data serial ke main window (yang bisa berisi index.html atau display.html)
 function sendSerialToWindows(data) {
+    // CRITICAL FIX: Add input validation and sanitization
+    if (!data || typeof data !== 'string') {
+        console.error('Invalid serial data received:', typeof data, data);
+        return;
+    }
+    
+    // Sanitize data - only allow alphanumeric characters and colon
+    let sanitizedData = data.replace(/[^a-zA-Z0-9:]/g, '').trim();
+    
+    // Validate format - must be numeric codes or specific keywords
+    const validPatterns = [
+        /^(10|90)\d{1,2}$/, // 10x, 90x, 10xx, 90xx format
+        /^(99|100)$/, // standby codes
+        /^(10|90)\d{1,2}:$/ // with colon suffix
+    ];
+    
+    const isValidFormat = validPatterns.some(pattern => pattern.test(sanitizedData));
+    
+    if (!isValidFormat) {
+        console.warn('Invalid serial data format received:', data, '-> sanitized:', sanitizedData);
+        return;
+    }
+    
+    // Length validation
+    if (sanitizedData.length > 10) {
+        console.warn('Serial data too long, truncating:', sanitizedData);
+        sanitizedData = sanitizedData.substring(0, 10);
+    }
+    
+    console.log('Validated serial data:', sanitizedData);
+    
     if (mainWindow) {
-        mainWindow.webContents.send('serial-data', data);
+        mainWindow.webContents.send('serial-data', sanitizedData);
     }
 }
 
@@ -1122,9 +1257,13 @@ ipcMain.handle('update-call-history', async (event, data) => {
         if (data.callHistory) {
             sharedCallHistory = data.callHistory;
             
-            // Save completed calls to persistent storage
-            await saveCompletedCallsToPersistentStorage();
-            console.log('📝 [MAIN] Updated call history:', sharedCallHistory.length, 'entries');
+            // ENHANCED: Save ALL calls to persistent storage immediately
+            const saveResult = await saveCompletedCallsToPersistentStorage();
+            if (saveResult) {
+                console.log('📝 [MAIN] Updated and saved call history:', sharedCallHistory.length, 'entries');
+            } else {
+                console.warn('⚠️ [MAIN] Call history updated but save failed');
+            }
         }
         if (data.activeAlerts) {
             sharedActiveAlerts = data.activeAlerts;
@@ -1152,17 +1291,19 @@ ipcMain.handle('update-call-history', async (event, data) => {
     }
 });
 
-// Fungsi untuk menyimpan call history yang completed ke persistent storage
+// ENHANCED: Save ALL call history (both active and completed) to persistent storage
 async function saveCompletedCallsToPersistentStorage() {
     try {
         const config = loadConfig();
         let persistentHistory = config.callHistoryStorage || [];
         
-        // Ambil calls yang completed dari sharedCallHistory
-        const completedCalls = sharedCallHistory.filter(call => call.status === 'completed');
+        // IMPROVED: Save ALL calls from sharedCallHistory, not just completed ones
+        const allCalls = sharedCallHistory || [];
+        
+        console.log('💾 [MAIN] Saving call history to persistent storage:', allCalls.length, 'calls');
         
         // Cek calls yang belum ada di persistent storage
-        completedCalls.forEach(call => {
+        allCalls.forEach(call => {
             const existsInPersistent = persistentHistory.find(persistent => 
                 persistent.id === call.id || 
                 (persistent.code === call.code && persistent.timestamp && call.timestamp && 
@@ -1178,7 +1319,30 @@ async function saveCompletedCallsToPersistentStorage() {
                     dateAdded: new Date().toISOString()
                 };
                 persistentHistory.push(persistentCall);
-                console.log('📝 Saved completed call to persistent storage:', call.code);
+                console.log('📝 [MAIN] Saved call to persistent storage:', call.code, '(' + call.status + ')');
+            } else {
+                // ENHANCED: Update existing call if status changed (e.g., active -> completed)
+                const existingIndex = persistentHistory.findIndex(persistent => 
+                    persistent.id === call.id || 
+                    (persistent.code === call.code && persistent.timestamp && call.timestamp && 
+                     Math.abs(new Date(persistent.timestamp) - new Date(call.timestamp)) < 1000)
+                );
+                
+                if (existingIndex !== -1) {
+                    const existingCall = persistentHistory[existingIndex];
+                    if (existingCall.status !== call.status || 
+                        (call.resetTime && !existingCall.resetTime)) {
+                        // Update existing call with new status/reset time
+                        persistentHistory[existingIndex] = {
+                            ...existingCall,
+                            ...call,
+                            timestamp: call.timestamp ? new Date(call.timestamp).toISOString() : existingCall.timestamp,
+                            resetTime: call.resetTime ? new Date(call.resetTime).toISOString() : existingCall.resetTime,
+                            dateModified: new Date().toISOString()
+                        };
+                        console.log('🔄 [MAIN] Updated call in persistent storage:', call.code, '(' + call.status + ')');
+                    }
+                }
             }
         });
         
@@ -1187,7 +1351,9 @@ async function saveCompletedCallsToPersistentStorage() {
         
         // Limit to last 10000 entries untuk avoid file terlalu besar
         if (persistentHistory.length > 10000) {
+            const removedCount = persistentHistory.length - 10000;
             persistentHistory = persistentHistory.slice(0, 10000);
+            console.log('🗑️ [MAIN] Trimmed', removedCount, 'oldest entries to maintain limit');
         }
         
         // Save back to config
@@ -1196,11 +1362,18 @@ async function saveCompletedCallsToPersistentStorage() {
             callHistoryStorage: persistentHistory
         };
         
-        saveConfig(updatedConfig);
-        console.log('💾 Persistent call history saved:', persistentHistory.length, 'total entries');
+        const saveResult = saveConfig(updatedConfig);
+        if (saveResult) {
+            console.log('✅ [MAIN] Persistent call history saved successfully:', persistentHistory.length, 'total entries');
+        } else {
+            console.error('❌ [MAIN] Failed to save persistent call history');
+        }
+        
+        return saveResult;
         
     } catch (error) {
-        console.error('Error saving calls to persistent storage:', error);
+        console.error('❌ [MAIN] Error saving calls to persistent storage:', error);
+        return false;
     }
 }
 
@@ -1259,14 +1432,29 @@ function broadcastCallHistoryUpdate() {
 // IPC handler untuk mendapatkan call history
 ipcMain.handle('get-call-history', async () => {
     try {
+        // ENHANCED: Ensure data is properly formatted and up-to-date
+        const formattedCallHistory = sharedCallHistory.map(call => ({
+            ...call,
+            // Ensure timestamps are Date objects for frontend compatibility
+            timestamp: call.timestamp instanceof Date ? call.timestamp : new Date(call.timestamp),
+            resetTime: call.resetTime ? (call.resetTime instanceof Date ? call.resetTime : new Date(call.resetTime)) : null
+        }));
+        
+        console.log('📤 [MAIN] Providing call history:', {
+            callHistoryCount: formattedCallHistory.length,
+            activeAlertsCount: sharedActiveAlerts.length,
+            persistentSoundsCount: persistentSounds.size,
+            persistentBlinkingCount: persistentBlinking.size
+        });
+        
         return {
-            callHistory: sharedCallHistory,
+            callHistory: formattedCallHistory,
             activeAlerts: sharedActiveAlerts,
             persistentSounds: Array.from(persistentSounds.entries()),
             persistentBlinking: Array.from(persistentBlinking.entries())
         };
     } catch (error) {
-        console.error('Error getting call history:', error);
+        console.error('❌ [MAIN] Error getting call history:', error);
         return {
             callHistory: [],
             activeAlerts: [],
@@ -1318,42 +1506,74 @@ ipcMain.handle('get-persistent-call-history', async (event, options = {}) => {
 // IPC handler untuk load persistent call history saat startup
 ipcMain.handle('load-persistent-call-history-at-startup', async () => {
     try {
-        const config = loadConfig();
-        const persistentHistory = config.callHistoryStorage || [];
+        // IMPROVED: Return already loaded shared call history instead of re-loading
+        console.log('📤 [MAIN] Providing pre-loaded call history to renderer:', sharedCallHistory.length, 'entries');
         
-        // Load recent calls (last 100) untuk current session
-        const recentCalls = persistentHistory.slice(0, 100).map(call => ({
+        // Ensure data is in the correct format for frontend
+        const formattedHistory = sharedCallHistory.map(call => ({
             ...call,
-            timestamp: new Date(call.timestamp),
-            resetTime: call.resetTime ? new Date(call.resetTime) : null
+            // Ensure timestamps are Date objects (might be ISO strings from storage)
+            timestamp: call.timestamp instanceof Date ? call.timestamp : new Date(call.timestamp),
+            resetTime: call.resetTime ? (call.resetTime instanceof Date ? call.resetTime : new Date(call.resetTime)) : null
         }));
         
-        // Update shared call history dengan recent calls
-        sharedCallHistory = recentCalls;
+        console.log('✅ [MAIN] Sent formatted call history to frontend:', formattedHistory.length, 'entries');
         
-        console.log('🔄 Loaded persistent call history at startup:', recentCalls.length, 'recent entries');
-        return recentCalls;
+        return formattedHistory;
     } catch (error) {
-        console.error('Error loading persistent call history at startup:', error);
+        console.error('❌ [MAIN] Error providing call history at startup:', error);
         return [];
+    }
+});
+
+// IPC handler for saving notification settings and broadcasting changes
+ipcMain.handle('save-notification-settings', async (event, settings) => {
+    try {
+        const config = loadConfig();
+        const result = saveConfig({
+            ...config,
+            notificationSettings: settings
+        });
+
+        if (result) {
+            // Broadcast notification settings update to all windows
+            broadcastToAllWindows('notification-settings-updated', settings);
+            console.log('Notification settings saved and broadcasted:', settings);
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error('Error saving notification settings:', error);
+        return false;
     }
 });
 
 // Handler untuk exit application
 ipcMain.handle('exit-application', async () => {
     try {
-        // Save config before exit
+        // ENHANCED: Final save of all data before exit
+        console.log('💾 [MAIN] Performing final save before exit...');
+        
+        // Save call history first (most important)
+        const historySaveResult = await saveCompletedCallsToPersistentStorage();
+        if (historySaveResult) {
+            console.log('✅ [MAIN] Call history saved successfully before exit');
+        } else {
+            console.error('❌ [MAIN] Failed to save call history before exit');
+        }
+        
+        // Save config
         const config = loadConfig();
-        if (saveConfig(config)) {
-            console.log('Configuration saved successfully before exit');
-            
-            // Save call history
-            await saveCompletedCallsToPersistentStorage();
-            console.log('Call history saved successfully before exit');
+        const configSaveResult = saveConfig(config);
+        if (configSaveResult) {
+            console.log('✅ [MAIN] Configuration saved successfully before exit');
+        } else {
+            console.error('❌ [MAIN] Failed to save configuration before exit');
+        }
         
         // Stop all audio
-            if (sharedAudioWindow) {
-                sharedAudioWindow.webContents.send('stop-shared-audio');
+        if (sharedAudioWindow) {
+            sharedAudioWindow.webContents.send('stop-shared-audio');
         }
         
         // Disconnect serial port jika masih terhubung
@@ -1365,24 +1585,22 @@ ipcMain.handle('exit-application', async () => {
                         else resolve();
                     });
                 });
-                    console.log('Serial port disconnected before exit');
+                console.log('Serial port disconnected before exit');
             } catch (error) {
                 console.error('Error disconnecting serial port:', error);
             }
         }
         
-            // Force close all windows
-            BrowserWindow.getAllWindows().forEach(window => {
-                if (!window.isDestroyed()) {
-                    window.destroy();
+        // Force close all windows
+        BrowserWindow.getAllWindows().forEach(window => {
+            if (!window.isDestroyed()) {
+                window.destroy();
             }
         });
         
-            // Kill the entire process
-            process.exit(0);
-            return true;
-        }
-        return false;
+        // Kill the entire process
+        process.exit(0);
+        return true;
     } catch (error) {
         console.error('Error during exit:', error);
         return false;

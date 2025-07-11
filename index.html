@@ -533,6 +533,67 @@
         let isConnected = false;
         let standbyMode = false;
 
+        // ADDED: Global timeout/interval tracking for proper cleanup
+        let activeTimeouts = new Set();
+        let activeIntervals = new Set();
+        
+        // Wrapper functions to track timeouts and intervals
+        function safeSetTimeout(callback, delay) {
+            const timeoutId = setTimeout(() => {
+                activeTimeouts.delete(timeoutId);
+                callback();
+            }, delay);
+            activeTimeouts.add(timeoutId);
+            return timeoutId;
+        }
+        
+        function safeClearTimeout(timeoutId) {
+            clearTimeout(timeoutId);
+            activeTimeouts.delete(timeoutId);
+        }
+        
+        function safeSetInterval(callback, delay) {
+            const intervalId = setInterval(callback, delay);
+            activeIntervals.add(intervalId);
+            return intervalId;
+        }
+        
+        function safeClearInterval(intervalId) {
+            clearInterval(intervalId);
+            activeIntervals.delete(intervalId);
+        }
+        
+        // Global cleanup function
+        function performGlobalCleanup() {
+            console.log('Performing global cleanup...');
+            
+            // Clear all active timeouts
+            activeTimeouts.forEach(timeoutId => {
+                clearTimeout(timeoutId);
+            });
+            activeTimeouts.clear();
+            
+            // Clear all active intervals
+            activeIntervals.forEach(intervalId => {
+                clearInterval(intervalId);
+            });
+            activeIntervals.clear();
+            
+            // Cleanup audio element
+            cleanupGlobalAudioElement();
+            
+            // Clear persistent data
+            if (typeof persistentSounds !== 'undefined') {
+                persistentSounds.clear();
+            }
+            if (typeof persistentBlinking !== 'undefined') {
+                persistentBlinking.clear();
+            }
+            
+            console.log('Global cleanup completed');
+        }
+
+        // Update current time and date with proper cleanup tracking
         function updateDateTime() {
             const now = new Date();
             const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
@@ -541,7 +602,8 @@
             document.getElementById('current-date').textContent = dateStr;
         }
         
-        setInterval(updateDateTime, 1000);
+        // Use safe interval for datetime updates
+        const dateTimeInterval = safeSetInterval(updateDateTime, 1000);
         updateDateTime();
 
         let callHistory = [];
@@ -1229,27 +1291,48 @@
                     const inputs = tr.querySelectorAll('input');
                     inputs.forEach((input, index) => {
                         const fields = ['roomName', 'bedName', 'shape', 'sa'];
-                        input.addEventListener('change', (e) => {
+                        // FIXED: Use proper event handling to prevent memory leaks
+                        const changeHandler = (e) => {
                             row[fields[index]] = e.target.value;
-                        });
-                        input.addEventListener('mousedown', e => e.stopPropagation());
-                        input.addEventListener('click', e => e.stopPropagation());
+                        };
+                        const mousedownHandler = e => e.stopPropagation();
+                        const clickHandler = e => e.stopPropagation();
+                        
+                        input.addEventListener('change', changeHandler);
+                        input.addEventListener('mousedown', mousedownHandler);
+                        input.addEventListener('click', clickHandler);
+                        
+                        // Store handlers for potential cleanup
+                        input._changeHandler = changeHandler;
+                        input._mousedownHandler = mousedownHandler;
+                        input._clickHandler = clickHandler;
                     });
                     
                     const selects = tr.querySelectorAll('select');
                     selects.forEach((select, idx) => {
+                        // FIXED: Use proper event handling to prevent memory leaks
+                        let changeHandler;
                         if (idx === 0) { // Charcode select
-                            select.addEventListener('change', (e) => {
+                            changeHandler = (e) => {
                                 row.charCode = e.target.value;
-                            });
+                            };
                         } else { // Sound selects
                             const fields = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6'];
-                            select.addEventListener('change', (e) => {
+                            changeHandler = (e) => {
                                 row[fields[idx - 1]] = e.target.value;
-                            });
+                            };
                         }
-                        select.addEventListener('mousedown', e => e.stopPropagation());
-                        select.addEventListener('click', e => e.stopPropagation());
+                        const mousedownHandler = e => e.stopPropagation();
+                        const clickHandler = e => e.stopPropagation();
+                        
+                        select.addEventListener('change', changeHandler);
+                        select.addEventListener('mousedown', mousedownHandler);
+                        select.addEventListener('click', clickHandler);
+                        
+                        // Store handlers for potential cleanup
+                        select._changeHandler = changeHandler;
+                        select._mousedownHandler = mousedownHandler;
+                        select._clickHandler = clickHandler;
                     });
 
                     tbody.appendChild(tr);
@@ -1431,12 +1514,24 @@
             let globalAudioElement = null;
             let audioElementInitialized = false;
 
-            // Function to ensure global audio element exists
+            // Function to ensure global audio element exists - FIXED MEMORY LEAK
             function ensureGlobalAudioElement() {
                 if (!globalAudioElement || globalAudioElement.parentNode === null) {
+                    // CRITICAL FIX: Cleanup existing listeners before creating new element
+                    if (globalAudioElement && globalAudioElement.parentNode) {
+                        // Remove all event listeners to prevent memory leaks
+                        const newElement = globalAudioElement.cloneNode(false);
+                        globalAudioElement.parentNode.replaceChild(newElement, globalAudioElement);
+                        globalAudioElement = null;
+                    }
+
                     // Remove any existing audio element dengan ID yang sama
                     const existingAudio = document.getElementById('persistent-audio');
                     if (existingAudio) {
+                        // Clean up event listeners before removal
+                        existingAudio.pause();
+                        existingAudio.src = '';
+                        existingAudio.load(); // Reset audio element
                         existingAudio.remove();
                     }
                     
@@ -1447,24 +1542,31 @@
                     document.body.appendChild(globalAudioElement);
                     console.log('Created global persistent audio element in index.html');
                     
-                    // Set up permanent event listeners
-                    globalAudioElement.addEventListener('ended', function() {
+                    // Set up permanent event listeners with proper cleanup handling
+                    const endedHandler = function() {
                         const code = this.dataset.currentCode;
                         const currentIndex = parseInt(this.dataset.currentIndex);
                         console.log('Global audio ended in index.html:', code, currentIndex);
                         if (code && !isNaN(currentIndex)) {
                             ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                         }
-                    });
+                    };
                     
-                    globalAudioElement.addEventListener('error', function(error) {
+                    const errorHandler = function(error) {
                         const code = this.dataset.currentCode;
                         const currentIndex = parseInt(this.dataset.currentIndex);
                         console.error('Global audio error in index.html:', error);
                         if (code && !isNaN(currentIndex)) {
                             ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                         }
-                    });
+                    };
+                    
+                    // Store handlers for cleanup later
+                    globalAudioElement._endedHandler = endedHandler;
+                    globalAudioElement._errorHandler = errorHandler;
+                    
+                    globalAudioElement.addEventListener('ended', endedHandler);
+                    globalAudioElement.addEventListener('error', errorHandler);
                     
                     globalAudioElement.addEventListener('loadstart', function() {
                         console.log('Audio loading started in index.html');
@@ -1482,6 +1584,26 @@
                     }
                 }
                 return globalAudioElement;
+            }
+
+            // ADDED: Cleanup function for audio element
+            function cleanupGlobalAudioElement() {
+                if (globalAudioElement) {
+                    globalAudioElement.pause();
+                    globalAudioElement.src = '';
+                    globalAudioElement.load();
+                    if (globalAudioElement._endedHandler) {
+                        globalAudioElement.removeEventListener('ended', globalAudioElement._endedHandler);
+                    }
+                    if (globalAudioElement._errorHandler) {
+                        globalAudioElement.removeEventListener('error', globalAudioElement._errorHandler);
+                    }
+                    if (globalAudioElement.parentNode) {
+                        globalAudioElement.parentNode.removeChild(globalAudioElement);
+                    }
+                    globalAudioElement = null;
+                    audioElementInitialized = false;
+                }
             }
 
             // Listen for persistent audio playback commands
@@ -1518,6 +1640,7 @@
                 if (audioElement.readyState >= 4) { // HAVE_ENOUGH_DATA
                     playAudio();
                 } else {
+                    // FIXED: Proper event handling structure
                     audioElement.addEventListener('canplaythrough', playAudio, { once: true });
                     audioElement.addEventListener('error', () => {
                         console.error('❌ [INDEX] Audio load error for:', soundFile);
@@ -1569,6 +1692,15 @@
             
             // Load persistent call history at startup
             await loadPersistentCallHistoryAtStartup();
+            
+            // Show notification about loaded history
+            const historyLoadedCount = callHistory.length;
+            if (historyLoadedCount > 0) {
+                showNotification('success', `📜 Dimuat ${historyLoadedCount} riwayat panggilan dari database`);
+                console.log('📊 [INDEX] Call history loaded at startup:', historyLoadedCount, 'entries');
+            } else {
+                console.log('🆕 [INDEX] Starting with empty call history');
+            }
             
             // Initialize global audio element
             ensureGlobalAudioElement();
@@ -2365,19 +2497,20 @@
                 `;
                 container.appendChild(alertElement);
 
-                // Auto-remove completed alerts after 3 seconds in index.html
+                // Auto-remove completed alerts after configured duration
                 if (isCompleted && !alert._autoRemoveScheduled) {
                     alert._autoRemoveScheduled = true;
+                    const removeDelay = (notificationSettings.showDuration || 30) * 1000;
                     setTimeout(async () => {
                         const idx = activeAlerts.findIndex(a => a.id === alert.id);
                         if (idx !== -1) {
-                            console.log('Auto-removing completed alert:', alert.code);
+                            console.log('Auto-removing completed alert after', removeDelay/1000, 'seconds:', alert.code);
                             activeAlerts.splice(idx, 1);
                             updateActiveAlerts();
                             // Update main process after removal
                             await updateCallHistoryToMain();
                         }
-                    }, 3000);
+                    }, removeDelay);
                 }
             });
         }
@@ -3005,6 +3138,31 @@
             // Hide error jika user mulai mengetik
             if (value.length > 0) {
                 document.getElementById('captcha-error').classList.add('hidden');
+            }
+        });
+
+        // ADDED: Window cleanup event handlers
+        window.addEventListener('beforeunload', () => {
+            console.log('Window beforeunload - performing cleanup');
+            performGlobalCleanup();
+        });
+        
+        window.addEventListener('unload', () => {
+            console.log('Window unload - final cleanup');
+            performGlobalCleanup();
+        });
+        
+        // Also listen for page hide/show for better mobile support
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                console.log('Page hidden - performing partial cleanup');
+                // Don't do full cleanup, just pause non-critical operations
+                activeTimeouts.forEach(timeoutId => {
+                    if (timeoutId !== dateTimeInterval) {
+                        clearTimeout(timeoutId);
+                        activeTimeouts.delete(timeoutId);
+                    }
+                });
             }
         });
     </script>

@@ -786,8 +786,9 @@
                         ctx.globalAlpha = 0.8;
                     }
                 } else {
+                    // Di display_config.html, tetap tampilkan shape untuk editing (transparan)
                     ctx.fillStyle = baseColor;
-                    ctx.globalAlpha = 0.9;
+                    ctx.globalAlpha = 0.3; // Sedikit terlihat untuk editing
                 }
                 
                 ctx.fill();
@@ -797,7 +798,7 @@
                     drawResizeHandles(ctx, shape);
                 }
                 
-                // Text label dengan kontras yang lebih baik
+                // Text label - di config mode selalu tampilkan untuk editing
                 ctx.globalAlpha = 1;
                 ctx.font = 'bold 11px sans-serif';
                 
@@ -807,23 +808,28 @@
                     const blinkCycle = (now % 1000) / 1000;
                     ctx.fillStyle = Math.sin(blinkCycle * Math.PI * 4) > 0 ? '#000000' : '#ffffff';
                 } else {
-                    // Gunakan warna kontras yang baik
+                    // Gunakan warna kontras yang baik untuk mode editing
                     const brightness = getBrightness(baseColor);
-                    ctx.fillStyle = brightness > 128 ? '#000000' : '#ffffff';
+                    ctx.fillStyle = brightness > 128 ? '#000000' : '#888888'; // Abu-abu untuk non-blinking
                 }
                 
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 
-                // Tampilkan kode dan tipe dengan spacing yang proporsional
-                const lines = [shape.code, shape.type];
-                const lineHeight = 12;
-                const totalHeight = lines.length * lineHeight;
-                const startY = shape.y - totalHeight / 2 + lineHeight / 2;
-                
-                lines.forEach((line, index) => {
-                    ctx.fillText(line, shape.x, startY + index * lineHeight);
-                });
+                if (shape.blinking) {
+                    // Saat blinking, hanya tampilkan tipe
+                    ctx.fillText(shape.type, shape.x, shape.y);
+                } else {
+                    // Saat tidak blinking di config mode, tampilkan kode dan tipe untuk editing
+                    const lines = [shape.code, shape.type];
+                    const lineHeight = 12;
+                    const totalHeight = lines.length * lineHeight;
+                    const startY = shape.y - totalHeight / 2 + lineHeight / 2;
+                    
+                    lines.forEach((line, index) => {
+                        ctx.fillText(line, shape.x, startY + index * lineHeight);
+                    });
+                }
                 
                 ctx.restore();
             });
@@ -1361,12 +1367,24 @@
         let globalAudioElement = null;
         let audioElementInitialized = false;
 
-        // Function to ensure global audio element exists
+        // Function to ensure global audio element exists - FIXED MEMORY LEAK
         function ensureGlobalAudioElement() {
             if (!globalAudioElement || globalAudioElement.parentNode === null) {
+                // CRITICAL FIX: Cleanup existing listeners before creating new element
+                if (globalAudioElement && globalAudioElement.parentNode) {
+                    // Remove all event listeners to prevent memory leaks
+                    const newElement = globalAudioElement.cloneNode(false);
+                    globalAudioElement.parentNode.replaceChild(newElement, globalAudioElement);
+                    globalAudioElement = null;
+                }
+
                 // Remove any existing audio element dengan ID yang sama
                 const existingAudio = document.getElementById('persistent-audio');
                 if (existingAudio) {
+                    // Clean up event listeners before removal
+                    existingAudio.pause();
+                    existingAudio.src = '';
+                    existingAudio.load(); // Reset audio element
                     existingAudio.remove();
                 }
                 
@@ -1377,24 +1395,31 @@
                 document.body.appendChild(globalAudioElement);
                 console.log('Created global persistent audio element in display_config.html');
                 
-                // Set up permanent event listeners
-                globalAudioElement.addEventListener('ended', function() {
+                // Set up permanent event listeners with proper cleanup handling
+                const endedHandler = function() {
                     const code = this.dataset.currentCode;
                     const currentIndex = parseInt(this.dataset.currentIndex);
                     console.log('Global audio ended:', code, currentIndex);
                     if (code && !isNaN(currentIndex)) {
                         ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                     }
-                });
+                };
                 
-                globalAudioElement.addEventListener('error', function(error) {
+                const errorHandler = function(error) {
                     const code = this.dataset.currentCode;
                     const currentIndex = parseInt(this.dataset.currentIndex);
                     console.error('Global audio error:', error);
                     if (code && !isNaN(currentIndex)) {
                         ipcRenderer.send('persistent-audio-ended', { code, currentIndex });
                     }
-                });
+                };
+                
+                // Store handlers for cleanup later
+                globalAudioElement._endedHandler = endedHandler;
+                globalAudioElement._errorHandler = errorHandler;
+                
+                globalAudioElement.addEventListener('ended', endedHandler);
+                globalAudioElement.addEventListener('error', errorHandler);
                 
                 globalAudioElement.addEventListener('loadstart', function() {
                     console.log('Audio loading started in display_config.html');
@@ -1412,6 +1437,26 @@
                 }
             }
             return globalAudioElement;
+        }
+
+        // ADDED: Cleanup function for audio element
+        function cleanupGlobalAudioElement() {
+            if (globalAudioElement) {
+                globalAudioElement.pause();
+                globalAudioElement.src = '';
+                globalAudioElement.load();
+                if (globalAudioElement._endedHandler) {
+                    globalAudioElement.removeEventListener('ended', globalAudioElement._endedHandler);
+                }
+                if (globalAudioElement._errorHandler) {
+                    globalAudioElement.removeEventListener('error', globalAudioElement._errorHandler);
+                }
+                if (globalAudioElement.parentNode) {
+                    globalAudioElement.parentNode.removeChild(globalAudioElement);
+                }
+                globalAudioElement = null;
+                audioElementInitialized = false;
+            }
         }
 
         // Listen for persistent audio playback commands
@@ -1666,12 +1711,26 @@
                 console.log('🔄 [DISPLAY] Reset code detected:', code, '→ Original code:', originalCode);
                 console.log('🔍 [DISPLAY] Current active alerts before reset:', activeAlerts.length);
                 
-                // Cari data di master data untuk validasi dan play reset sound
+                // Cari data di master data untuk validasi
                 const data = masterData.find(d => d.charCode === originalCode);
                 if (!isValidMasterData(data)) {
                     console.log('Original code not found or incomplete in master data:', originalCode);
                     showNotification('warning', `Kode ${originalCode} tidak ditemukan atau data tidak lengkap`);
                     return;
+                }
+
+                // STOP AUDIO IMMEDIATELY
+                console.log('Stopping persistent sound for code:', originalCode);
+                await ipcRenderer.invoke('stop-persistent-sounds', { code: originalCode });
+
+                // STOP BLINKING IMMEDIATELY
+                const targetShape = shapes.find(s => s.code === originalCode);
+                if (targetShape) {
+                    targetShape.blinking = false;
+                    blinkingShapes.delete(originalCode);
+                    persistentBlinking.delete(originalCode);
+                    console.log('Stopped blinking for shape:', originalCode);
+                    renderShapes();
                 }
                 
                 // Update call history untuk reset
@@ -1700,7 +1759,8 @@
                     // Tampilkan notifikasi OS untuk reset - ENHANCED FORMAT
                     showEnhancedOSNotification(originalCode, 'reset');
                     
-                    // Hapus dari active alerts setelah delay yang lebih pendek
+                    // Hapus dari active alerts setelah configured duration
+                    const completedRemoveDelay = (notificationSettings.showDuration || 30) * 1000;
                     setTimeout(async () => {
                         const idx = activeAlerts.findIndex(a => a.id === activeAlerts[alertIndex].id);
                         if (idx !== -1) {
@@ -1708,18 +1768,26 @@
                             // Update main process lagi setelah hapus dari active alerts
                             await updateCallHistoryToMain();
                         }
-                    }, 3000); // Reduced from 30000 to 3000 for faster UI update
+                    }, completedRemoveDelay); // Use configured duration instead of hardcoded 3000
                     
-                    console.log(`🔄 [DISPLAY] Reset alert ${originalCode} marked as completed and will be removed in 3 seconds`);
-                    console.log(`📊 [DISPLAY] Broadcasting update - Active alerts: ${activeAlerts.length}, Call history: ${callHistory.length}`);
-                }
-                
-                const displayText = `${data.roomName} - ${data.bedName}`;
-                showNotification('success', `Reset: ${displayText}`);
-                
-                // RESET TIDAK MEMAINKAN SUARA APA-APA
-                console.log(`Reset processed for ${originalCode} - No sound should be played`);
-                return;
+                                    console.log(`🔄 [DISPLAY] Reset alert ${originalCode} marked as completed and will be removed in ${completedRemoveDelay/1000} seconds`);
+                console.log(`📊 [DISPLAY] Broadcasting update - Active alerts: ${activeAlerts.length}, Call history: ${callHistory.length}`);
+            }
+            
+            // Remove dari persistent tracking
+            if (persistentSounds.has(originalCode)) {
+                persistentSounds.delete(originalCode);
+                console.log('🗑️ [DISPLAY_CONFIG] Removed from persistent sounds:', originalCode);
+            }
+            
+            // Update ke main process
+            updatePersistentStateToMain();
+            
+            const displayText = `${data.roomName} - ${data.bedName}`;
+            showNotification('success', `Reset: ${displayText}`);
+            
+            console.log(`Reset processed for ${originalCode} - Audio stopped and persistent state cleared`);
+            return;
             }
             
             // Untuk kode panggilan normal (10x atau 10xx)
@@ -2206,6 +2274,15 @@
                 await loadSoundFiles();
                 await loadCallHistoryFromMain(); // Load call history dari main process
                 await loadPersistentCallHistoryAtStartup(); // Load persistent call history
+                
+                // Show notification about loaded history
+                const historyLoadedCount = callHistory.length;
+                if (historyLoadedCount > 0) {
+                    showNotification('success', `📜 Dimuat ${historyLoadedCount} riwayat panggilan`);
+                    console.log('📊 [DISPLAY_CONFIG] Call history loaded at startup:', historyLoadedCount, 'entries');
+                } else {
+                    console.log('🆕 [DISPLAY_CONFIG] Starting with empty call history');
+                }
                 await checkInitialConnectionStatus();
                 await checkAudioStatus(); // Check if audio is currently playing
                 
@@ -2780,7 +2857,7 @@
             preview.querySelector('span.rounded').classList.add(colorMap[color][3]);
         });
 
-        // Save notification settings
+        // Save notification settings using new IPC handler
         document.getElementById('apply-notification-settings').addEventListener('click', async function() {
             const settings = {
                 position: document.getElementById('notification-position').value,
@@ -2792,14 +2869,10 @@
             };
 
             try {
-                const config = await ipcRenderer.invoke('load-config');
-                const result = await ipcRenderer.invoke('save-config', {
-                    ...config,
-                    notificationSettings: settings
-                });
+                const result = await ipcRenderer.invoke('save-notification-settings', settings);
 
                 if (result) {
-                    showNotification('success', 'Notification settings saved successfully');
+                    showNotification('success', 'Notification settings saved and synchronized');
                     document.getElementById('notification-settings-modal').classList.add('hidden');
                 } else {
                     showNotification('error', 'Failed to save notification settings');
