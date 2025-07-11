@@ -215,6 +215,34 @@
   },
   "callHistoryStorage": [
     {
+      "id": 1752226274806,
+      "code": "101",
+      "room": "Anggrek1",
+      "bed": "1",
+      "display": "Anggrek1 - 1",
+      "time": "16:31:14.11-7-2025",
+      "timestamp": "2025-07-11T09:31:14.805Z",
+      "status": "completed",
+      "resetTime": "2025-07-11T09:31:16.881Z",
+      "resetTimeStr": "16:31:16.11-7-2025",
+      "dateAdded": "2025-07-11T09:31:14.810Z",
+      "dateModified": "2025-07-11T09:31:16.886Z"
+    },
+    {
+      "id": 1752226234220,
+      "code": "101",
+      "room": "Anggrek1",
+      "bed": "1",
+      "display": "Anggrek1 - 1",
+      "time": "16:30:34.11-7-2025",
+      "timestamp": "2025-07-11T09:30:34.219Z",
+      "status": "completed",
+      "resetTime": "2025-07-11T09:30:53.535Z",
+      "resetTimeStr": "16:30:53.11-7-2025",
+      "dateAdded": "2025-07-11T09:30:34.232Z",
+      "dateModified": "2025-07-11T09:30:53.540Z"
+    },
+    {
       "id": 1752220030239,
       "code": "102",
       "room": "Anggrek1",

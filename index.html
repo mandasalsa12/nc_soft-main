@@ -360,20 +360,20 @@
                     <div class="flex items-center space-x-2">
                         <div class="text-sm text-gray-600 mr-4">
                             <i class="fas fa-info-circle mr-1"></i>
-                            Preview PDF sebelum mencetak atau menyimpan
+                            Lihat chart waktu respons rata-rata berdasarkan filter tanggal
                         </div>
                         <div class="flex space-x-2">
                             <button id="show-pie-chart" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm flex items-center">
-                                <i class="fas fa-chart-pie mr-1"></i> Pie Chart
+                                <i class="fas fa-chart-pie mr-1"></i> Rata-rata per Tanggal
                             </button>
                             <button id="show-bar-chart" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-sm flex items-center">
-                                <i class="fas fa-chart-bar mr-1"></i> Bar Chart
+                                <i class="fas fa-chart-bar mr-1"></i> Diagram Batang
                             </button>
                             <button id="show-line-chart" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-sm flex items-center">
-                                <i class="fas fa-chart-line mr-1"></i> Line Chart
+                                <i class="fas fa-chart-line mr-1"></i> Tren Respons
                             </button>
                             <button id="show-doughnut-chart" class="bg-pink-600 hover:bg-pink-700 text-white px-3 py-1.5 rounded text-sm flex items-center">
-                                <i class="fas fa-circle-notch mr-1"></i> Doughnut
+                                <i class="fas fa-circle-notch mr-1"></i> Rata-rata per Ruangan
                             </button>
                         </div>
                     </div>
@@ -1849,148 +1849,73 @@
                 // Prepare data based on filtered call history
                 const dataToUse = filteredCallHistory.length > 0 ? filteredCallHistory : callHistory;
                 
+                // Helper function to calculate average response time by date
+                function calculateAverageResponseTimeByDate(data) {
+                    const dateResponseTimes = {};
+                    const dateCallCounts = {};
+                    
+                    data.forEach(call => {
+                        if (call.resetTime && call.timestamp && call.status === 'completed') {
+                            const date = new Date(call.timestamp).toLocaleDateString('id-ID');
+                            const responseTime = (new Date(call.resetTime) - new Date(call.timestamp)) / 1000; // in seconds
+                            
+                            if (!dateResponseTimes[date]) {
+                                dateResponseTimes[date] = 0;
+                                dateCallCounts[date] = 0;
+                            }
+                            dateResponseTimes[date] += responseTime;
+                            dateCallCounts[date]++;
+                        }
+                    });
+
+                    // Calculate averages and convert to minutes
+                    const averages = {};
+                    Object.keys(dateResponseTimes).forEach(date => {
+                        averages[date] = Math.round((dateResponseTimes[date] / dateCallCounts[date]) / 60 * 100) / 100; // Convert to minutes with 2 decimal places
+                    });
+
+                    // Sort dates
+                    const sortedDates = Object.keys(averages).sort((a, b) => {
+                        return new Date(a.split('/').reverse().join('-')) - new Date(b.split('/').reverse().join('-'));
+                    });
+
+                    return {
+                        labels: sortedDates,
+                        data: sortedDates.map(date => averages[date])
+                    };
+                }
+
+                // Helper function to format minutes to readable time
+                function formatMinutes(minutes) {
+                    if (minutes < 1) {
+                        return Math.round(minutes * 60) + 's';
+                    } else {
+                        const mins = Math.floor(minutes);
+                        const secs = Math.round((minutes - mins) * 60);
+                        return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+                    }
+                }
+                
                 let chartData;
                 let chartOptions;
                 let chartConfig;
 
                 switch(type) {
                     case 'pie':
-                        // Count calls by status
-                        const statusCounts = {
-                            'active': dataToUse.filter(call => call.status === 'active').length,
-                            'completed': dataToUse.filter(call => call.status === 'completed').length
-                        };
-
-                        chartTitle.textContent = 'Status Distribution';
+                        // Average response time by date (Pie Chart)
+                        const pieData = calculateAverageResponseTimeByDate(dataToUse);
+                        
+                        chartTitle.textContent = 'Waktu Respons Rata-rata per Tanggal (menit)';
                         chartConfig = {
                             type: 'pie',
                             data: {
-                                labels: ['Active', 'Completed'],
+                                labels: pieData.labels,
                                 datasets: [{
-                                    data: [statusCounts.active, statusCounts.completed],
-                                    backgroundColor: ['#ef4444', '#22c55e'],
-                                    borderWidth: 1
-                                }]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: {
-                                    legend: {
-                                        position: 'bottom'
-                                    }
-                                }
-                            }
-                        };
-                        break;
-
-                    case 'bar':
-                        // Count calls by room
-                        const roomCounts = {};
-                        dataToUse.forEach(call => {
-                            roomCounts[call.room] = (roomCounts[call.room] || 0) + 1;
-                        });
-
-                        chartTitle.textContent = 'Calls by Room';
-                        chartConfig = {
-                            type: 'bar',
-                            data: {
-                                labels: Object.keys(roomCounts),
-                                datasets: [{
-                                    label: 'Number of Calls',
-                                    data: Object.values(roomCounts),
-                                    backgroundColor: '#3b82f6',
-                                    borderWidth: 1
-                                }]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                scales: {
-                                    y: {
-                                        beginAtZero: true,
-                                        ticks: {
-                                            stepSize: 1
-                                        }
-                                    }
-                                }
-                            }
-                        };
-                        break;
-
-                    case 'line':
-                        // Group calls by date
-                        const dateGroups = {};
-                        dataToUse.forEach(call => {
-                            const date = new Date(call.timestamp).toLocaleDateString();
-                            dateGroups[date] = (dateGroups[date] || 0) + 1;
-                        });
-
-                        chartTitle.textContent = 'Calls Trend';
-                        chartConfig = {
-                            type: 'line',
-                            data: {
-                                labels: Object.keys(dateGroups),
-                                datasets: [{
-                                    label: 'Number of Calls',
-                                    data: Object.values(dateGroups),
-                                    borderColor: '#8b5cf6',
-                                    tension: 0.1,
-                                    fill: false
-                                }]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                scales: {
-                                    y: {
-                                        beginAtZero: true,
-                                        ticks: {
-                                            stepSize: 1
-                                        }
-                                    }
-                                }
-                            }
-                        };
-                        break;
-
-                    case 'doughnut':
-                        // Average response time by room
-                        const roomResponseTimes = {};
-                        const roomCallCounts = {};
-                        
-                        dataToUse.forEach(call => {
-                            if (call.resetTime && call.timestamp) {
-                                const responseTime = (new Date(call.resetTime) - new Date(call.timestamp)) / 1000; // in seconds
-                                if (!roomResponseTimes[call.room]) {
-                                    roomResponseTimes[call.room] = 0;
-                                    roomCallCounts[call.room] = 0;
-                                }
-                                roomResponseTimes[call.room] += responseTime;
-                                roomCallCounts[call.room]++;
-                            }
-                        });
-
-                        // Calculate averages
-                        const averages = {};
-                        Object.keys(roomResponseTimes).forEach(room => {
-                            averages[room] = Math.round(roomResponseTimes[room] / roomCallCounts[room]);
-                        });
-
-                        chartTitle.textContent = 'Average Response Time by Room (seconds)';
-                        chartConfig = {
-                            type: 'doughnut',
-                            data: {
-                                labels: Object.keys(averages),
-                                datasets: [{
-                                    data: Object.values(averages),
+                                    data: pieData.data,
                                     backgroundColor: [
-                                        '#3b82f6',
-                                        '#ef4444',
-                                        '#22c55e',
-                                        '#f59e0b',
-                                        '#8b5cf6',
-                                        '#ec4899'
+                                        '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', 
+                                        '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
+                                        '#f97316', '#a855f7', '#14b8a6', '#f43f5e'
                                     ],
                                     borderWidth: 1
                                 }]
@@ -2001,6 +1926,181 @@
                                 plugins: {
                                     legend: {
                                         position: 'bottom'
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                const value = context.parsed;
+                                                return context.label + ': ' + formatMinutes(value);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                        break;
+
+                    case 'bar':
+                        // Average response time by date (Bar Chart)
+                        const barData = calculateAverageResponseTimeByDate(dataToUse);
+
+                        chartTitle.textContent = 'Waktu Respons Rata-rata per Tanggal (menit)';
+                        chartConfig = {
+                            type: 'bar',
+                            data: {
+                                labels: barData.labels,
+                                datasets: [{
+                                    label: 'Waktu Respons Rata-rata (menit)',
+                                    data: barData.data,
+                                    backgroundColor: '#3b82f6',
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: {
+                                        beginAtZero: true,
+                                        title: {
+                                            display: true,
+                                            text: 'Waktu (menit)'
+                                        },
+                                        ticks: {
+                                            callback: function(value) {
+                                                return formatMinutes(value);
+                                            }
+                                        }
+                                    },
+                                    x: {
+                                        title: {
+                                            display: true,
+                                            text: 'Tanggal'
+                                        }
+                                    }
+                                },
+                                plugins: {
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                return 'Rata-rata: ' + formatMinutes(context.parsed.y);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                        break;
+
+                    case 'line':
+                        // Average response time trend by date (Line Chart)
+                        const lineData = calculateAverageResponseTimeByDate(dataToUse);
+
+                        chartTitle.textContent = 'Tren Waktu Respons Rata-rata per Tanggal (menit)';
+                        chartConfig = {
+                            type: 'line',
+                            data: {
+                                labels: lineData.labels,
+                                datasets: [{
+                                    label: 'Waktu Respons Rata-rata (menit)',
+                                    data: lineData.data,
+                                    borderColor: '#8b5cf6',
+                                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                    tension: 0.1,
+                                    fill: true,
+                                    pointBackgroundColor: '#8b5cf6',
+                                    pointBorderColor: '#ffffff',
+                                    pointBorderWidth: 2
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: {
+                                        beginAtZero: true,
+                                        title: {
+                                            display: true,
+                                            text: 'Waktu (menit)'
+                                        },
+                                        ticks: {
+                                            callback: function(value) {
+                                                return formatMinutes(value);
+                                            }
+                                        }
+                                    },
+                                    x: {
+                                        title: {
+                                            display: true,
+                                            text: 'Tanggal'
+                                        }
+                                    }
+                                },
+                                plugins: {
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                return 'Rata-rata: ' + formatMinutes(context.parsed.y);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                        break;
+
+                    case 'doughnut':
+                        // Average response time by room (Doughnut Chart)
+                        const roomResponseTimes = {};
+                        const roomCallCounts = {};
+                        
+                        dataToUse.forEach(call => {
+                            if (call.resetTime && call.timestamp && call.status === 'completed') {
+                                const responseTime = (new Date(call.resetTime) - new Date(call.timestamp)) / 1000; // in seconds
+                                if (!roomResponseTimes[call.room]) {
+                                    roomResponseTimes[call.room] = 0;
+                                    roomCallCounts[call.room] = 0;
+                                }
+                                roomResponseTimes[call.room] += responseTime;
+                                roomCallCounts[call.room]++;
+                            }
+                        });
+
+                        // Calculate averages and convert to minutes
+                        const roomAverages = {};
+                        Object.keys(roomResponseTimes).forEach(room => {
+                            roomAverages[room] = Math.round((roomResponseTimes[room] / roomCallCounts[room]) / 60 * 100) / 100; // Convert to minutes
+                        });
+
+                        chartTitle.textContent = 'Waktu Respons Rata-rata per Ruangan (menit)';
+                        chartConfig = {
+                            type: 'doughnut',
+                            data: {
+                                labels: Object.keys(roomAverages),
+                                datasets: [{
+                                    data: Object.values(roomAverages),
+                                    backgroundColor: [
+                                        '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', 
+                                        '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
+                                        '#f97316', '#a855f7', '#14b8a6', '#f43f5e'
+                                    ],
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: {
+                                        position: 'bottom'
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function(context) {
+                                                const value = context.parsed;
+                                                return context.label + ': ' + formatMinutes(value);
+                                            }
+                                        }
                                     }
                                 }
                             }
