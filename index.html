@@ -184,6 +184,10 @@
             <i class="fas fa-desktop text-2xl"></i>
             <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Display</span>
         </button>
+        <button id="fab-reset-calls" title="Reset All Calls" class="mb-2 bg-orange-600 hover:bg-orange-700 text-white rounded-full shadow-lg w-16 h-16 flex items-center justify-center animate-fab-bounce relative group">
+            <i class="fas fa-redo-alt text-2xl"></i>
+            <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Reset All Calls</span>
+        </button>
         <button id="fab-master-settings" title="Master Data" class="mb-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-full shadow-lg w-16 h-16 flex items-center justify-center animate-fab-bounce relative group">
             <i class="fas fa-database text-2xl"></i>
             <span class="absolute right-20 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Master Data</span>
@@ -309,6 +313,60 @@
             <div class="flex justify-center space-x-2">
                 <button id="master-data-password-submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Submit</button>
                 <button id="master-data-password-cancel" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reset All Calls Confirmation Modal -->
+    <div id="reset-all-calls-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 p-6 border w-full max-w-md shadow-lg rounded-md bg-white">
+            <div class="text-center mb-6">
+                <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-orange-100 mb-4">
+                    <i class="fas fa-redo-alt text-orange-600 text-2xl"></i>
+                </div>
+                <h3 class="text-xl font-semibold text-gray-900 mb-2">Reset Semua Panggilan</h3>
+                <p class="text-gray-600 text-sm">Apakah Anda yakin ingin mereset semua panggilan aktif? Tindakan ini akan:</p>
+            </div>
+            
+            <div class="mb-6">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <ul class="text-sm text-yellow-800 space-y-1">
+                        <li class="flex items-center">
+                            <i class="fas fa-check mr-2 text-yellow-600"></i>
+                            Menghentikan semua audio yang sedang bermain
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check mr-2 text-yellow-600"></i>
+                            Menandai semua alert aktif sebagai selesai
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check mr-2 text-yellow-600"></i>
+                            Menghentikan semua blinking di display
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check mr-2 text-yellow-600"></i>
+                            Memperbarui riwayat panggilan
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <div class="flex items-center">
+                        <i class="fas fa-exclamation-triangle text-red-600 mr-2"></i>
+                        <span class="text-sm font-medium text-red-800">Peringatan: Tindakan ini tidak dapat dibatalkan!</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-center space-x-3">
+                <button id="reset-all-confirm" class="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-lg font-medium flex items-center">
+                    <i class="fas fa-redo-alt mr-2"></i>
+                    Ya, Reset Semua
+                </button>
+                <button id="reset-all-cancel" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg font-medium flex items-center">
+                    <i class="fas fa-times mr-2"></i>
+                    Batal
+                </button>
             </div>
         </div>
     </div>
@@ -620,12 +678,61 @@
         let selectedRow = null;
         let nextId = 1;
         let soundFiles = [];
+        
+        // Global showNotification function - defined early for use in all scopes
+        window.showNotification = function(type, message, duration) {
+            const container = document.getElementById('notification-container');
+            if (!container) {
+                console.warn('Notification container not found');
+                return null;
+            }
+            
+            const notification = document.createElement('div');
+            
+            const bgColor = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                warning: 'bg-yellow-500',
+                info: 'bg-blue-500'
+            }[type] || 'bg-gray-500';
+            
+            notification.className = `${bgColor} text-white px-4 py-2 rounded shadow-lg mb-2 flex items-center`;
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'} mr-2"></i>
+                <span>${message}</span>
+            `;
+            
+            container.appendChild(notification);
+            
+            // Default auto hide 5 detik jika tidak ada durasi
+            const autoHideDuration = typeof duration === 'number' ? duration : 5000;
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, autoHideDuration);
+            
+            return notification;
+        };
+        
+        // Create global alias for backward compatibility
+        const showNotification = window.showNotification;
 
         let alertSettings = {
             displayFormat: "K{room}B{bed}",
             alertDuration: 30,
             soundEnabled: false,
             customFormat: ""
+        };
+
+        let notificationSettings = {
+            displayFormat: "K{room}B{bed}",
+            alertDuration: 30,
+            soundEnabled: false,
+            customFormat: "",
+            showDuration: 30,
+            position: 'top-right',
+            animationSpeed: 500
         };
 
         let masterSettings = {
@@ -1086,33 +1193,7 @@
                 }
             });
 
-            function showNotification(type, message, duration) {
-                const container = document.getElementById('notification-container');
-                const notification = document.createElement('div');
-                
-                const bgColor = {
-                    success: 'bg-green-500',
-                    error: 'bg-red-500',
-                    warning: 'bg-yellow-500',
-                    info: 'bg-blue-500'
-                }[type] || 'bg-gray-500';
-                
-                notification.className = `${bgColor} text-white px-4 py-2 rounded shadow-lg mb-2 flex items-center`;
-                notification.innerHTML = `
-                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'} mr-2"></i>
-                    <span>${message}</span>
-                `;
-                
-                container.appendChild(notification);
-                
-                // Default auto hide 5 detik jika tidak ada durasi
-                const autoHideDuration = typeof duration === 'number' ? duration : 5000;
-                setTimeout(() => {
-                    notification.remove();
-                }, autoHideDuration);
-                
-                return notification;
-            }
+            // showNotification is now defined globally above
 
             function updateConnectionStatus() {
                 if (standbyMode) {
@@ -1395,33 +1476,47 @@
                 showNotification(type, message);
             });
 
+            // OPTIMIZED: Serial data handler with faster processing
             ipcRenderer.on('serial-data', (event, code) => {
-                console.log('Received in renderer process:', code);
-                addDebugMessage(`Received code: ${code}`, 'info');
-
+                console.log('⚡ [INDEX] Received:', code);
+                
+                // OPTIMIZED: Fast path for common operations
                 if (code === '100') {
                     standbyMode = false;
                     updateConnectionStatus();
                     showNotification('info', 'Sistem keluar dari mode standby');
                     addDebugMessage('Standby mode OFF', 'success');
-                } else if (code === '99') {
-                    standbyMode = true;
-                    // Kedip hijau sekali
-                    setStandbyIndicator('green');
-                    setTimeout(() => {
-                        setStandbyIndicator('yellow');
-                    }, 500);
-                    addDebugMessage('Standby mode ON', 'warning');
-                } else if (code.startsWith('10')) {
-                    // Kedip biru sekali
-                    setStandbyIndicator('blue');
-                    setTimeout(() => {
-                        setStandbyIndicator('yellow');
-                    }, 500);
-                    processCall(code);
-                } else {
-                    processCall(code);
+                    return;
                 }
+                
+                if (code === '99') {
+                    standbyMode = true;
+                    setStandbyIndicator('green');
+                    // OPTIMIZED: Use requestAnimationFrame for smoother indicator updates
+                    requestAnimationFrame(() => {
+                        setTimeout(() => setStandbyIndicator('yellow'), 500);
+                    });
+                    addDebugMessage('Standby mode ON', 'warning');
+                    return;
+                }
+                
+                // OPTIMIZED: Immediate processing for call codes
+                if (code.startsWith('10')) {
+                    setStandbyIndicator('blue');
+                    requestAnimationFrame(() => {
+                        setTimeout(() => setStandbyIndicator('yellow'), 500);
+                    });
+                }
+                
+                // OPTIMIZED: Process call immediately without additional checks
+                requestAnimationFrame(() => {
+                    processCall(code);
+                });
+                
+                // OPTIMIZED: Add debug message asynchronously to avoid blocking
+                requestIdleCallback(() => {
+                    addDebugMessage(`⚡ Processed: ${code}`, 'info');
+                });
             });
             
             ipcRenderer.on('serial-monitor-data', (event, data) => {
@@ -1690,6 +1785,9 @@
             // Load call history dari main process saat inisialisasi
             await loadCallHistoryFromMain();
             
+            // Load notification settings from config
+            await loadNotificationSettings();
+            
             // Load persistent call history at startup
             await loadPersistentCallHistoryAtStartup();
             
@@ -1726,17 +1824,28 @@
                 });
             }
             
+            // OPTIMIZED: Test buttons with immediate response
             if (test101Btn) {
                 test101Btn.addEventListener('click', () => {
-                    processCall('101');
-                    addDebugMessage('Test code 101 (Call)', 'info');
+                    // OPTIMIZED: Immediate visual feedback
+                    test101Btn.style.transform = 'scale(0.95)';
+                    requestAnimationFrame(() => {
+                        test101Btn.style.transform = '';
+                        processCall('101');
+                    });
+                    addDebugMessage('⚡ Test 101 (Call)', 'info');
                 });
             }
             
             if (test901Btn) {
                 test901Btn.addEventListener('click', () => {
-                    processCall('901');
-                    addDebugMessage('Test code 901 (Reset)', 'success');
+                    // OPTIMIZED: Immediate visual feedback
+                    test901Btn.style.transform = 'scale(0.95)';
+                    requestAnimationFrame(() => {
+                        test901Btn.style.transform = '';
+                        processCall('901');
+                    });
+                    addDebugMessage('⚡ Test 901 (Reset)', 'success');
                 });
             }
 
@@ -2197,22 +2306,12 @@
             return true;
         }
 
-        function processCall(code) {
+        async function processCall(code) {
             console.log('Processing call with code:', code);
             addDebugMessage(`Processing code: ${code}`, 'info');
             
-            // Khusus untuk kode standby
+            // Khusus untuk kode standby (99 atau 99: sudah di-normalize di main.js)
             if (code === '99') {
-                standbyMode = true;
-                setStandbyIndicator('green');
-                setTimeout(() => {
-                    setStandbyIndicator('yellow');
-                }, 500);
-                addDebugMessage('Standby mode ON', 'warning');
-                return;
-            }
-            // Khusus untuk kode standby
-            if (code === '99:') {
                 standbyMode = true;
                 setStandbyIndicator('green');
                 setTimeout(() => {
@@ -2233,11 +2332,30 @@
             
             // Untuk kode reset (90x atau 90xx)
             if (code.startsWith('90')) {
-                console.log('Processing reset code:', code);
+                console.log('🛑 [INDEX] Reset code detected:', code);
                 addDebugMessage(`Reset code: ${code}`, 'warning');
                 
                 const bedNumber = code.substring(2);
                 const originalCode = `10${bedNumber}`;
+                
+                // CRITICAL: Prevent duplicate reset processing with throttling
+                const resetKey = `reset_${originalCode}`;
+                const now = Date.now();
+                
+                if (window.resetThrottleMap && window.resetThrottleMap[resetKey]) {
+                    const timeSinceLastReset = now - window.resetThrottleMap[resetKey];
+                    if (timeSinceLastReset < 2000) { // 2 second throttle
+                        console.log('🚫 [INDEX] Reset throttled for code:', originalCode, 'last reset:', timeSinceLastReset, 'ms ago');
+                        addDebugMessage(`Reset throttled for ${originalCode} (${Math.round(timeSinceLastReset/1000)}s ago)`, 'warning');
+                        return;
+                    }
+                }
+                
+                // Initialize throttle map if not exists
+                if (!window.resetThrottleMap) {
+                    window.resetThrottleMap = {};
+                }
+                window.resetThrottleMap[resetKey] = now;
                 
                 // Cek apakah kode original ada di master data dan memiliki data lengkap
                 const originalData = masterData.find(d => d.charCode === originalCode);
@@ -2247,9 +2365,24 @@
                     return;
                 }
                 
-                console.log('Reset code detected. Original code:', originalCode);
+                console.log('🛑 [INDEX] Processing reset for original code:', originalCode);
                 
-                const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode);
+                // CRITICAL: Stop persistent sounds IMMEDIATELY before processing alerts
+                console.log('🛑 [INDEX] Stopping persistent sounds immediately for code:', originalCode);
+                try {
+                    const stopResult = await ipcRenderer.invoke('stop-persistent-sounds', { code: originalCode });
+                    console.log('🛑 [INDEX] Stop sound result:', stopResult);
+                } catch (error) {
+                    console.error('❌ [INDEX] Error stopping persistent sounds:', error);
+                }
+                
+                // CRITICAL FIX: Check for both active status and code match
+                console.log('🔍 [INDEX] Looking for active alert with code:', originalCode);
+                console.log('📊 [INDEX] Current active alerts:', activeAlerts.map(a => ({ code: a.code, status: a.status, id: a.id })));
+                
+                const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode && alert.status === 'active');
+                console.log('🎯 [INDEX] Found alert index:', alertIndex);
+                
                 if (alertIndex !== -1) {
                     addDebugMessage(`Resetting alert for code: ${originalCode}`, 'success');
                     
@@ -2263,8 +2396,8 @@
                         callHistory[historyIndex].resetTime = now;
                         callHistory[historyIndex].resetTimeStr = resetTimeStr;
                         
-                        // Kirim update call history ke main process
-                        updateCallHistoryToMain();
+                                            // Kirim update call history ke main process - AWAIT untuk ensure completion
+                    await updateCallHistoryToMain();
                     }
                     
                     // Update active alert
@@ -2309,15 +2442,7 @@
                     updateActiveAlerts();
                     updateCallHistory();
 
-                    // Stop persistent sounds di main process
-                    console.log('Requesting stop persistent sound for code:', originalCode);
-                    ipcRenderer.invoke('stop-persistent-sounds', { code: originalCode }).then(result => {
-                        if (result.success) {
-                            console.log('Persistent sound stopped for code:', originalCode);
-                        } else {
-                            console.error('Failed to stop persistent sound:', result.error);
-                        }
-                    });
+                    // Sound already stopped at the beginning of reset processing
                     
                     // Remove dari persistent blinking
                     if (persistentBlinking.has(originalCode)) {
@@ -2325,17 +2450,56 @@
                         console.log('Removed from persistent blinking:', originalCode);
                     }
                     
-                    // Update ke main process
-                    updatePersistentStateToMain();
+                    // Update ke main process - AWAIT untuk ensure completion
+                    await updatePersistentStateToMain();
 
                     // Tambahkan notifikasi OS untuk reset - ENHANCED FORMAT
                     showEnhancedOSNotification(originalCode, 'reset');
+                    
+                    // ENHANCED: Add visual success feedback
+                    addDebugMessage(`✅ RESET SUCCESSFUL: ${originalCode} → Alert completed`, 'success');
+                    showNotification('success', `Reset berhasil: ${originalData.roomName} - ${originalData.bedName}`, 3000);
+                } else {
+                    // CRITICAL FIX: Handle case when alert not found
+                    console.warn('⚠️ [INDEX] No active alert found for reset code:', originalCode);
+                    console.log('📋 [INDEX] Available active alerts:', activeAlerts.map(a => a.code));
+                    addDebugMessage(`No active alert found for reset code: ${originalCode}`, 'warning');
+                    
+                    // Still try to stop persistent sounds and blinking even if alert not found
+                    try {
+                        console.log('🛑 [INDEX] Attempting to stop sounds/blinking anyway for code:', originalCode);
+                        const result = await ipcRenderer.invoke('stop-persistent-sounds', { code: originalCode });
+                        if (result.success) {
+                            console.log('✅ [INDEX] Persistent sound stopped for orphaned code:', originalCode);
+                        }
+                    } catch (error) {
+                        console.error('❌ [INDEX] Error stopping orphaned sound:', error);
+                    }
+                    
+                    // Remove dari persistent blinking anyway
+                    if (persistentBlinking.has(originalCode)) {
+                        persistentBlinking.delete(originalCode);
+                        console.log('🗑️ [INDEX] Removed orphaned blinking for code:', originalCode);
+                        await updatePersistentStateToMain();
+                    }
+                    
+                    // ENHANCED: Add feedback for orphaned reset
+                    addDebugMessage(`⚠️ ORPHANED RESET: ${originalCode} → Stopped sounds/blinking`, 'warning');
+                    showNotification('warning', `Reset processed (no active alert): ${originalData.roomName} - ${originalData.bedName}`, 3000);
                 }
                 return;
             }
             
             // Untuk kode panggilan normal (10x atau 10xx)
             if (code.startsWith('10')) {
+                // CRITICAL FIX: Check for duplicate active call
+                const existingActiveCall = activeAlerts.find(alert => alert.code === code && alert.status === 'active');
+                if (existingActiveCall) {
+                    console.log('⚠️ [INDEX] Call already active for code:', code, 'ID:', existingActiveCall.id);
+                    addDebugMessage(`Call already active for code: ${code}`, 'warning');
+                    return;
+                }
+                
                 // Cek apakah kode ada di master data dan memiliki data lengkap
                 const data = masterData.find(d => d.charCode === code);
                 if (!isValidMasterData(data)) {
@@ -2600,7 +2764,7 @@
                 // Auto-remove completed alerts after configured duration
                 if (isCompleted && !alert._autoRemoveScheduled) {
                     alert._autoRemoveScheduled = true;
-                    const removeDelay = (notificationSettings.showDuration || 30) * 1000;
+                    const removeDelay = (alertSettings.alertDuration || 30) * 1000;
                     setTimeout(async () => {
                         const idx = activeAlerts.findIndex(a => a.id === alert.id);
                         if (idx !== -1) {
@@ -3074,6 +3238,21 @@
             }
         }
 
+        // Load notification settings from config
+        async function loadNotificationSettings() {
+            try {
+                const config = await ipcRenderer.invoke('load-config');
+                if (config.notificationSettings) {
+                    notificationSettings = { ...notificationSettings, ...config.notificationSettings };
+                    console.log('✅ [INDEX] Notification settings loaded:', notificationSettings);
+                } else {
+                    console.log('ℹ️ [INDEX] No notification settings in config, using defaults');
+                }
+            } catch (error) {
+                console.error('❌ [INDEX] Error loading notification settings:', error);
+            }
+        }
+
         // Load persistent call history at startup
         async function loadPersistentCallHistoryAtStartup() {
             try {
@@ -3139,6 +3318,21 @@
             const { ipcRenderer } = require('electron');
             // Ubah ke display.html
             await ipcRenderer.invoke('open-display', { target: 'display.html' });
+        });
+
+        // Floating button Reset All Calls: reset semua panggilan aktif
+        document.getElementById('fab-reset-calls').addEventListener('click', () => {
+            // Cek apakah ada panggilan aktif
+            const activeCallsCount = activeAlerts.filter(alert => alert.status === 'active').length;
+            const persistentSoundsCount = persistentSounds.size;
+            
+            if (activeCallsCount === 0 && persistentSoundsCount === 0) {
+                showNotification('info', 'Tidak ada panggilan aktif untuk direset', 3000);
+                return;
+            }
+            
+            // Tampilkan modal konfirmasi
+            document.getElementById('reset-all-calls-modal').classList.remove('hidden');
         });
 
         // Exit Application with Captcha
@@ -3241,6 +3435,228 @@
             }
         });
 
+        // Reset All Calls Modal Event Handlers
+        document.getElementById('reset-all-cancel').addEventListener('click', () => {
+            document.getElementById('reset-all-calls-modal').classList.add('hidden');
+        });
+
+        // Verify reset-all-confirm button exists before adding event listener
+        const resetAllConfirmButton = document.getElementById('reset-all-confirm');
+        if (resetAllConfirmButton) {
+            console.log('✅ [INIT] Reset all confirm button found and event listener will be added');
+        } else {
+            console.error('❌ [INIT] Reset all confirm button NOT FOUND!');
+        }
+
+        document.getElementById('reset-all-confirm').addEventListener('click', async () => {
+            try {
+                console.log('🔘 [RESET-ALL-BUTTON] Button clicked - starting reset process');
+                
+                document.getElementById('reset-all-calls-modal').classList.add('hidden');
+                
+                // Tampilkan loading notification
+                const loadingNotification = showNotification('info', 'Mereset semua panggilan...', 10000);
+                
+                console.log('🔘 [RESET-ALL-BUTTON] About to call resetAllActiveCalls()');
+                const resetResult = await resetAllActiveCalls();
+                console.log('🔘 [RESET-ALL-BUTTON] resetAllActiveCalls() returned:', resetResult);
+                
+                // Remove loading notification
+                if (loadingNotification && loadingNotification.remove) {
+                    loadingNotification.remove();
+                }
+                
+                if (resetResult > 0) {
+                    showNotification('success', `Semua panggilan berhasil direset (${resetResult} panggilan)`, 5000);
+                } else {
+                    showNotification('info', 'Tidak ada panggilan aktif untuk direset', 3000);
+                }
+                
+            } catch (error) {
+                console.error('🔘 [RESET-ALL-BUTTON] Error resetting all calls:', error);
+                showNotification('error', 'Gagal mereset panggilan: ' + error.message, 5000);
+            }
+        });
+
+        // Close reset modal when clicking outside
+        document.getElementById('reset-all-calls-modal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('reset-all-calls-modal')) {
+                document.getElementById('reset-all-calls-modal').classList.add('hidden');
+            }
+        });
+
+        // Fungsi untuk mereset semua panggilan aktif - DIRECT RESET tanpa trigger serial
+        async function resetAllActiveCalls() {
+            try {
+                console.log('🛑 [RESET-ALL] Starting DIRECT reset all active calls process');
+                console.log('🛑 [RESET-ALL] Current state before reset:');
+                console.log('  - activeAlerts:', activeAlerts.length, 'alerts');
+                console.log('  - persistentSounds:', persistentSounds.size, 'sounds');
+                console.log('  - persistentBlinking:', persistentBlinking.size, 'shapes');
+                
+                // Dapatkan semua kode panggilan yang aktif
+                const activeCallCodes = activeAlerts
+                    .filter(alert => alert.status === 'active')
+                    .map(alert => alert.code);
+                
+                console.log('🛑 [RESET-ALL] Active call codes from alerts:', activeCallCodes);
+                
+                // Tambahkan kode dari persistent sounds yang mungkin tidak ada di active alerts
+                const persistentSoundCodes = Array.from(persistentSounds.keys());
+                console.log('🛑 [RESET-ALL] Persistent sound codes:', persistentSoundCodes);
+                
+                const allActiveCodes = [...new Set([...activeCallCodes, ...persistentSoundCodes])];
+                
+                console.log('🛑 [RESET-ALL] Found active call codes:', allActiveCodes);
+                
+                if (allActiveCodes.length === 0) {
+                    console.log('ℹ️ [RESET-ALL] No active calls to reset');
+                    return 0;
+                }
+                
+                let resetCount = 0;
+                
+                // DIRECT RESET: Reset setiap panggilan aktif secara langsung tanpa trigger
+                for (const callCode of allActiveCodes) {
+                    try {
+                        console.log(`🛑 [RESET-ALL] DIRECT reset for call code: ${callCode}`);
+                        
+                        // Validasi master data
+                        const originalData = masterData.find(d => d.charCode === callCode);
+                        if (!isValidMasterData(originalData)) {
+                            console.warn(`⚠️ [RESET-ALL] Skipping ${callCode} - not found in master data`);
+                            continue;
+                        }
+                        
+                        // STEP 1: Stop persistent sounds IMMEDIATELY
+                        console.log(`🛑 [RESET-ALL] Stopping persistent sounds for code: ${callCode}`);
+                        try {
+                            const stopResult = await ipcRenderer.invoke('stop-persistent-sounds', { code: callCode });
+                            console.log(`🛑 [RESET-ALL] Stop sound result for ${callCode}:`, stopResult);
+                        } catch (error) {
+                            console.error(`❌ [RESET-ALL] Error stopping persistent sounds for ${callCode}:`, error);
+                        }
+                        
+                        // STEP 2: Remove from local persistent collections IMMEDIATELY
+                        if (persistentSounds.has(callCode)) {
+                            persistentSounds.delete(callCode);
+                            console.log(`🗑️ [RESET-ALL] Removed from persistent sounds: ${callCode}`);
+                        }
+                        
+                        if (persistentBlinking.has(callCode)) {
+                            persistentBlinking.delete(callCode);
+                            console.log(`🗑️ [RESET-ALL] Removed from persistent blinking: ${callCode}`);
+                        }
+                        
+                        // STEP 3: Update call history DIRECTLY
+                        const historyIndex = callHistory.findIndex(call => call.code === callCode && call.status === 'active');
+                        if (historyIndex !== -1) {
+                            const now = new Date();
+                            const resetTimeStr = formatDateTime(now);
+                            
+                            callHistory[historyIndex].status = 'completed';
+                            callHistory[historyIndex].resetTime = now;
+                            callHistory[historyIndex].resetTimeStr = resetTimeStr;
+                            console.log(`📝 [RESET-ALL] Updated call history for ${callCode}`);
+                        }
+                        
+                        // STEP 4: Update active alerts DIRECTLY
+                        const alertIndex = activeAlerts.findIndex(alert => alert.code === callCode && alert.status === 'active');
+                        if (alertIndex !== -1) {
+                            const now = new Date();
+                            const resetTimeStr = formatDateTime(now);
+                            
+                            activeAlerts[alertIndex].status = 'completed';
+                            activeAlerts[alertIndex].resetTime = now;
+                            activeAlerts[alertIndex].resetTimeStr = resetTimeStr;
+                            
+                            // STEP 5: Update UI element DIRECTLY
+                            const alertElement = document.querySelector(`[data-alert-id="${activeAlerts[alertIndex].id}"]`);
+                            if (alertElement) {
+                                alertElement.classList.remove('bg-red-100', 'border-red-500');
+                                alertElement.classList.add('bg-green-100', 'border-green-500');
+                                
+                                const title = alertElement.querySelector('h3');
+                                const time = alertElement.querySelector('span.bg-red-500');
+                                const button = alertElement.querySelector('button');
+                                const roomText = alertElement.querySelector('p.text-red-600');
+                                const codeText = alertElement.querySelector('span.text-gray-500');
+                                
+                                if (title) title.classList.replace('text-red-800', 'text-blue-800');
+                                if (time) {
+                                    time.classList.remove('bg-red-500');
+                                    time.classList.add('bg-blue-500');
+                                }
+                                if (button) {
+                                    button.classList.remove('bg-red-500', 'hover:bg-red-600');
+                                    button.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                                    button.innerHTML = '<i class="fas fa-check mr-1"></i> Selesai';
+                                }
+                                if (roomText) roomText.classList.replace('text-red-600', 'text-blue-600');
+                                if (codeText) codeText.classList.replace('text-gray-500', 'text-blue-500');
+                            }
+                            
+                            resetCount++;
+                            console.log(`✅ [RESET-ALL] Successfully reset call: ${callCode}`);
+                            
+                            // STEP 6: Tampilkan notifikasi OS untuk reset
+                            showEnhancedOSNotification(callCode, 'reset');
+                            
+                        } else {
+                            console.warn(`⚠️ [RESET-ALL] No active alert found for code: ${callCode} (may be orphaned sound)`);
+                            
+                            // Tetap count sebagai reset karena kita menghentikan sound
+                            if (persistentSounds.has(callCode) || persistentBlinking.has(callCode)) {
+                                resetCount++;
+                                console.log(`🗑️ [RESET-ALL] Reset orphaned sound/blinking: ${callCode}`);
+                            }
+                        }
+                        
+                        // Add debug message untuk setiap reset
+                        addDebugMessage(`✅ DIRECT RESET: ${callCode} → Status direset langsung`, 'success');
+                        
+                    } catch (error) {
+                        console.error(`❌ [RESET-ALL] Error resetting call ${callCode}:`, error);
+                        addDebugMessage(`❌ DIRECT RESET FAILED: ${callCode} → ${error.message}`, 'error');
+                    }
+                }
+                
+                // STEP 7: Update UI setelah semua reset
+                updateActiveAlerts();
+                updateCallHistory();
+                
+                // STEP 8: Kirim update ke main process
+                console.log('📤 [RESET-ALL] Sending updates to main process...');
+                await updateCallHistoryToMain();
+                
+                // STEP 9: Schedule removal of completed alerts setelah configured duration
+                const removeDelay = (alertSettings.alertDuration || 30) * 1000;
+                setTimeout(async () => {
+                    const completedAlerts = activeAlerts.filter(alert => alert.status === 'completed');
+                    completedAlerts.forEach(alert => {
+                        const idx = activeAlerts.findIndex(a => a.id === alert.id);
+                        if (idx !== -1) {
+                            activeAlerts.splice(idx, 1);
+                        }
+                    });
+                    
+                    updateActiveAlerts();
+                    await updateCallHistoryToMain();
+                    console.log('🗑️ [RESET-ALL] Removed completed alerts after delay');
+                }, removeDelay);
+                
+                console.log(`✅ [RESET-ALL] DIRECT reset completed successfully. ${resetCount} calls were reset.`);
+                addDebugMessage(`✅ DIRECT RESET ALL SUCCESSFUL: ${resetCount} panggilan direset langsung`, 'success');
+                
+                return resetCount;
+                
+            } catch (error) {
+                console.error('❌ [RESET-ALL] Error in resetAllActiveCalls:', error);
+                addDebugMessage(`❌ DIRECT RESET ALL FAILED: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
         // ADDED: Window cleanup event handlers
         window.addEventListener('beforeunload', () => {
             console.log('Window beforeunload - performing cleanup');
@@ -3265,6 +3681,149 @@
                 });
             }
         });
+
+        // Test functions for debugging and validation
+        window.testIndexCall = {
+            test101: () => {
+                console.log('🧪 [TEST] Testing call 101...');
+                processCall('101');
+            },
+            test901: () => {
+                console.log('🧪 [TEST] Testing reset 901...');
+                processCall('901');
+            },
+            test99: () => {
+                console.log('🧪 [TEST] Testing standby 99...');
+                processCall('99');
+            },
+            test100: () => {
+                console.log('🧪 [TEST] Testing exit standby 100...');
+                processCall('100');
+            },
+            testSerialParsing: async (testData = null) => {
+                console.log('🧪 [TEST] Running serial parsing test...');
+                const result = await ipcRenderer.invoke('test-serial-parsing', testData);
+                console.log('🧪 [TEST] Test result:', result);
+                return result;
+            },
+            testSpecificCode: async (code) => {
+                console.log('🧪 [TEST] Testing specific serial code:', code);
+                const result = await ipcRenderer.invoke('test-serial-parsing', code);
+                console.log('🧪 [TEST] Specific test result for', code, ':', result);
+                return result;
+            },
+            testMasterDataLookup: (code) => {
+                const data = masterData.find(d => d.charCode === code);
+                console.log('🔍 [TEST] Lookup result for code', code, ':', data);
+                return data;
+            },
+            debugState: () => {
+                console.log('🧪 [DEBUG] Current state:');
+                console.log('- masterData:', masterData.length, 'entries');
+                console.log('- callHistory:', callHistory.length, 'entries');
+                console.log('- activeAlerts:', activeAlerts.length, 'alerts');
+                console.log('- activeAlerts detail:', activeAlerts.map(a => ({ code: a.code, status: a.status, id: a.id })));
+                console.log('- masterIsConnected:', masterIsConnected);
+                console.log('- standbyMode:', standbyMode);
+                console.log('- persistentSounds:', Array.from(persistentSounds.keys()));
+                console.log('- persistentBlinking:', Array.from(persistentBlinking.keys()));
+                return {
+                    masterData: masterData,
+                    callHistory: callHistory,
+                    activeAlerts: activeAlerts,
+                    masterIsConnected: masterIsConnected,
+                    standbyMode: standbyMode,
+                    persistentSounds: Array.from(persistentSounds.entries()),
+                    persistentBlinking: Array.from(persistentBlinking.entries())
+                };
+            },
+            testReset: async (code) => {
+                console.log('🧪 [TEST] Testing reset for code:', code);
+                const resetCode = code.startsWith('90') ? code : `90${code.substring(2)}`;
+                console.log('🧪 [TEST] Using reset code:', resetCode);
+                await processCall(resetCode);
+                return resetCode;
+            },
+            forceStopSound: async (code) => {
+                console.log('🧪 [TEST] Force stopping sound for code:', code);
+                const result = await ipcRenderer.invoke('stop-persistent-sounds', { code });
+                console.log('🧪 [TEST] Force stop result:', result);
+                return result;
+            },
+            checkResetStatus: (callCode) => {
+                console.log('🧪 [TEST] Checking reset status for call code:', callCode);
+                
+                // Check call history
+                const historyEntries = callHistory.filter(call => call.code === callCode);
+                console.log('📋 [TEST] Call history entries for', callCode, ':', historyEntries.length);
+                historyEntries.forEach((entry, i) => {
+                    console.log(`  ${i+1}. ID: ${entry.id}, Status: ${entry.status}, Time: ${entry.time}, Reset: ${entry.resetTimeStr || 'None'}`);
+                });
+                
+                // Check active alerts
+                const activeCallAlerts = activeAlerts.filter(alert => alert.code === callCode);
+                console.log('⚠️ [TEST] Active alerts for', callCode, ':', activeCallAlerts.length);
+                activeCallAlerts.forEach((alert, i) => {
+                    console.log(`  ${i+1}. ID: ${alert.id}, Status: ${alert.status}, Time: ${alert.time}`);
+                });
+                
+                // Check persistent sounds
+                const hasPersistentSound = persistentSounds.has(callCode);
+                console.log('🔊 [TEST] Has persistent sound for', callCode, ':', hasPersistentSound);
+                
+                // Check persistent blinking
+                const hasPersistentBlinking = persistentBlinking.has(callCode);
+                console.log('💡 [TEST] Has persistent blinking for', callCode, ':', hasPersistentBlinking);
+                
+                return {
+                    callCode: callCode,
+                    historyEntries: historyEntries,
+                    activeAlerts: activeCallAlerts,
+                    hasPersistentSound: hasPersistentSound,
+                    hasPersistentBlinking: hasPersistentBlinking,
+                    summary: {
+                        totalHistoryEntries: historyEntries.length,
+                        activeAlerts: activeCallAlerts.length,
+                        completedEntries: historyEntries.filter(e => e.status === 'completed').length,
+                        activeEntries: historyEntries.filter(e => e.status === 'active').length
+                    }
+                };
+            },
+            testResetAll: async () => {
+                console.log('🧪 [TEST] Testing reset all calls function...');
+                try {
+                    const result = await resetAllActiveCalls();
+                    console.log('🧪 [TEST] Reset all result:', result, 'calls reset');
+                    return result;
+                } catch (error) {
+                    console.error('🧪 [TEST] Reset all failed:', error);
+                    return { error: error.message };
+                }
+            },
+            testResetAllButton: () => {
+                console.log('🧪 [TEST] Testing reset all button click...');
+                const button = document.getElementById('reset-all-confirm');
+                if (button) {
+                    button.click();
+                    console.log('🧪 [TEST] Reset all button clicked');
+                } else {
+                    console.error('🧪 [TEST] Reset all button not found');
+                }
+            },
+            showResetAllModal: () => {
+                console.log('🧪 [TEST] Showing reset all modal...');
+                const modal = document.getElementById('reset-all-calls-modal');
+                if (modal) {
+                    modal.classList.remove('hidden');
+                    console.log('🧪 [TEST] Reset all modal shown');
+                } else {
+                    console.error('🧪 [TEST] Reset all modal not found');
+                }
+            }
+        };
+
+        console.log('🧪 [INDEX] Test functions loaded. Use window.testIndexCall for testing.');
+        console.log('Available test functions: test101(), test901(), test99(), test100(), testReset(code), forceStopSound(code), checkResetStatus(code), testSerialParsing(), debugState(), testResetAll(), testResetAllButton(), showResetAllModal()');
     </script>
 
 

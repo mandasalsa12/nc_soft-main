@@ -400,6 +400,18 @@ app.whenReady().then(async () => {
 ipcMain.on('persistent-audio-ended', (event, { code, currentIndex }) => {
     console.log('Persistent audio ended callback for code:', code, 'index:', currentIndex);
     
+    // CRITICAL: Validate that this callback is for the currently playing sequence
+    if (!currentAudioSequence || currentAudioSequence.code !== code || !isAudioPlaying) {
+        console.log('🚫 [MAIN] Ignoring stale audio ended callback for code:', code, 'current sequence:', currentAudioSequence?.code, 'isPlaying:', isAudioPlaying);
+        return;
+    }
+    
+    // CRITICAL: Validate current index to prevent duplicate callbacks
+    if (currentIndex !== currentAudioSequence.currentIndex) {
+        console.log('🚫 [MAIN] Ignoring out-of-sync audio ended callback - expected index:', currentAudioSequence.currentIndex, 'got:', currentIndex);
+        return;
+    }
+    
     // Update current audio sequence
     if (currentAudioSequence && currentAudioSequence.code === code && isAudioPlaying) {
         currentAudioSequence.currentIndex = currentIndex + 1;
@@ -436,7 +448,7 @@ ipcMain.on('persistent-audio-ended', (event, { code, currentIndex }) => {
             }, 3000); // 3 second delay
         } else {
             // Continue to next sound in current sequence
-            console.log(`▶️ Playing sound ${currentAudioSequence.currentIndex}/${currentAudioSequence.sounds.length} for code: ${code}`);
+            console.log(`▶️ Playing sound ${currentAudioSequence.currentIndex + 1}/${currentAudioSequence.sounds.length} for code: ${code}`);
             sendAudioToAllWindows();
         }
     }
@@ -640,8 +652,11 @@ ipcMain.handle('connect-port', async (event, { port, baudRate }) => {
             autoOpen: false
         });
 
-        // Create parser for reading data
-        const parser = new ReadlineParser({ delimiter: '\r\n' });
+        // Create parser for reading data with optimized settings
+        const parser = new ReadlineParser({ 
+            delimiter: '\r\n',
+            includeDelimiter: false
+        });
         serialPort.pipe(parser);
 
         // Set up event handlers
@@ -667,14 +682,20 @@ ipcMain.handle('connect-port', async (event, { port, baudRate }) => {
                     mainWindow.webContents.send('serial-status', 'connected');
                 }
 
+                // OPTIMIZED: Direct processing without unnecessary async operations
                 parser.on('data', (data) => {
                     try {
                         const cleanData = data.toString().trim();
-                        console.log('Received data:', cleanData);
-                        
-                        sendSerialToWindows(cleanData);
+                        if (cleanData) { // Only process non-empty data
+                            console.log('📥 [SERIAL] Received:', cleanData);
+                            
+                            // CRITICAL: Process immediately without additional delay
+                            setImmediate(() => {
+                                sendSerialToWindows(cleanData);
+                            });
+                        }
                     } catch (error) {
-                        console.error('Error processing received data:', error);
+                        console.error('❌ [SERIAL] Error processing received data:', error);
                     }
                 });
 
@@ -798,21 +819,21 @@ ipcMain.handle('show-system-notification', async (event, { title, body, urgency 
 // Handler untuk play sounds di main process dengan looping (tidak terputus navigasi)
 ipcMain.handle('play-persistent-sounds', async (event, { code, sounds }) => {
     try {
-        console.log('Starting persistent looping audio sequence for code:', code, 'with', sounds.length, 'sounds');
+        console.log('🚀 [MAIN] Starting persistent looping audio sequence for code:', code, 'with', sounds.length, 'sounds');
         
-        // Stop existing sound jika ada YANG BERBEDA CODE
+        // CRITICAL: Stop existing sound jika ada YANG BERBEDA CODE
         if (isAudioPlaying && currentAudioSequence && currentAudioSequence.code !== code) {
-            console.log('Stopping existing audio sequence for different code');
+            console.log('🛑 [MAIN] Stopping existing audio sequence for different code:', currentAudioSequence.code);
             stopCurrentAudio();
         }
         
         // Jika sudah ada audio untuk code yang sama dan masih playing, skip
         if (isAudioPlaying && currentAudioSequence && currentAudioSequence.code === code) {
-            console.log('Audio for code', code, 'is already playing, continuing...');
+            console.log('⚠️ [MAIN] Audio for code', code, 'is already playing, continuing existing sequence...');
             return { success: true, message: 'Already playing' };
         }
         
-        // Set persistent sound state
+        // CRITICAL: Set persistent sound state BEFORE starting audio
         persistentSounds.set(code, {
             sounds: sounds,
             isPlaying: true,
@@ -828,55 +849,71 @@ ipcMain.handle('play-persistent-sounds', async (event, { code, sounds }) => {
         // Send audio command directly to all windows
         sendAudioToAllWindows();
         
-        console.log(`🚀 Audio looping sequence started for code: ${code}`);
-        console.log(`📝 Sequence details: ${sounds.length} sounds, will loop continuously with 3-second delay between loops`);
-        console.log(`🛑 To stop this sequence, send reset code: 90${code.substring(2)}`);
+        console.log(`🚀 [MAIN] Audio looping sequence started for code: ${code}`);
+        console.log(`📝 [MAIN] Sequence details: ${sounds.length} sounds, will loop continuously with 3-second delay between loops`);
+        console.log(`🛑 [MAIN] To stop this sequence, send reset code: 90${code.substring(2)}`);
+        console.log(`💾 [MAIN] Persistent sound state saved for code: ${code}`);
         return { success: true };
     } catch (error) {
-        console.error('Error playing persistent sounds:', error);
+        console.error('❌ [MAIN] Error playing persistent sounds:', error);
         return { success: false, error: error.message };
     }
 });
 
-// Handler untuk stop persistent sounds
+// Handler untuk stop persistent sounds - ENHANCED FOR IMMEDIATE RESET
 ipcMain.handle('stop-persistent-sounds', async (event, { code }) => {
     try {
-        // Log info about what's being stopped
+        // ENHANCED: Log detailed state before stopping
         const soundData = persistentSounds.get(code);
         const currentLoop = currentAudioSequence?.loopCount || 1;
         
-        console.log(`🛑 Stopping persistent looping audio for code: ${code} (was on loop ${currentLoop})`);
+        console.log(`🛑 [MAIN] IMMEDIATE STOP REQUEST for persistent audio code: ${code}`);
+        console.log(`📊 [MAIN] Audio state before stop:`, {
+            hasPersistentSound: persistentSounds.has(code),
+            currentSequenceCode: currentAudioSequence?.code,
+            isAudioPlaying: isAudioPlaying,
+            currentlyPlayingAudioCode: currentlyPlayingAudio?.code,
+            loopCount: currentLoop
+        });
         
-        // Remove from persistent sounds
+        let wasRemoved = false;
+        
+        // CRITICAL: Remove from persistent sounds FIRST
         if (persistentSounds.has(code)) {
             persistentSounds.delete(code);
+            wasRemoved = true;
+            console.log(`🗑️ [MAIN] Removed from persistent sounds: ${code}`);
         }
         
-        // Stop audio ONLY if it matches the code
+        // CRITICAL: Stop audio IMMEDIATELY if it matches the code
         if (currentAudioSequence && currentAudioSequence.code === code) {
+            console.log(`🛑 [MAIN] Stopping current audio sequence IMMEDIATELY for code: ${code}`);
             stopCurrentAudio();
         } else {
-            console.log(`Audio sequence code mismatch: current=${currentAudioSequence?.code}, requested=${code}`);
+            console.log(`ℹ️ [MAIN] Audio sequence code mismatch - current: ${currentAudioSequence?.code}, requested: ${code}`);
         }
         
         // CRITICAL: Also clear currentlyPlayingAudio if it matches the code being stopped
         if (currentlyPlayingAudio && currentlyPlayingAudio.code === code) {
-            console.log(`🗑️ Clearing currentlyPlayingAudio for stopped code: ${code}`);
+            console.log(`🗑️ [MAIN] Clearing currentlyPlayingAudio for stopped code: ${code}`);
             currentlyPlayingAudio = null;
         }
         
-        // Broadcast update ke semua window
+        // CRITICAL: Broadcast IMMEDIATE stop to all windows
         broadcastToAllWindows('persistent-sound-stopped', { code });
         
-        console.log(`✅ Successfully stopped looping audio for code: ${code}`);
-        return { success: true };
+        console.log(`✅ [MAIN] IMMEDIATE STOP completed for code: ${code}, wasRemoved: ${wasRemoved}`);
+        return { success: true, wasRemoved: wasRemoved, immediate: true };
     } catch (error) {
-        console.error('Error stopping persistent sounds:', error);
+        console.error('❌ [MAIN] Error stopping persistent sounds:', error);
         return { success: false, error: error.message };
     }
 });
 
-// Function to send audio command to all windows - ENHANCED VERSION
+// OPTIMIZED: Cache for file existence checks
+const audioFileCache = new Map();
+
+// Function to send audio command to all windows - OPTIMIZED VERSION
 function sendAudioToAllWindows() {
     if (!currentAudioSequence || !isAudioPlaying) {
         return;
@@ -884,9 +921,8 @@ function sendAudioToAllWindows() {
     
     const { code, sounds, currentIndex } = currentAudioSequence;
     
-    // Check if we've completed all sounds (this should now be handled in the ended callback)
+    // OPTIMIZED: Early return for invalid index
     if (currentIndex >= sounds.length) {
-        console.log('Reached end of sounds for code:', code, '- this should be handled by loop logic');
         return;
     }
     
@@ -894,17 +930,25 @@ function sendAudioToAllWindows() {
     const soundPath = getSoundsPath();
     const fullPath = path.join(soundPath, soundFile);
     
-    const currentLoop = currentAudioSequence.loopCount || 1;
-    console.log(`🔊 Sending audio command to all windows - Code: ${code}, Sound: ${soundFile} (${currentIndex + 1}/${sounds.length}), Loop: ${currentLoop}`);
+    // OPTIMIZED: Use cached file existence check
+    const cacheKey = fullPath;
+    let fileExists = audioFileCache.get(cacheKey);
     
-    // Check if file exists
-    if (!fs.existsSync(fullPath)) {
-        console.error('Audio file not found:', fullPath);
+    if (fileExists === undefined) {
+        fileExists = fs.existsSync(fullPath);
+        audioFileCache.set(cacheKey, fileExists);
+    }
+    
+    if (!fileExists) {
+        console.error('❌ [AUDIO] File not found:', soundFile);
         // Skip to next sound
         currentAudioSequence.currentIndex = currentIndex + 1;
-        sendAudioToAllWindows();
+        setImmediate(() => sendAudioToAllWindows());
         return;
     }
+    
+    const currentLoop = currentAudioSequence.loopCount || 1;
+    console.log(`⚡ [AUDIO] Playing: ${soundFile} (${currentIndex + 1}/${sounds.length}) Loop: ${currentLoop}`);
     
     const audioCommand = { 
         code, 
@@ -914,31 +958,41 @@ function sendAudioToAllWindows() {
         fullPath: fullPath
     };
     
-    // Send to all windows
-    broadcastToAllWindows('play-persistent-audio', audioCommand);
+    // OPTIMIZED: Non-blocking broadcast
+    setImmediate(() => {
+        broadcastToAllWindows('play-persistent-audio', audioCommand);
+    });
 }
 
-// Function to broadcast to all windows
+// OPTIMIZED: Function to broadcast to all windows with faster execution
 function broadcastToAllWindows(eventName, data) {
     const windows = BrowserWindow.getAllWindows();
-    windows.forEach((window, index) => {
+    let sentCount = 0;
+    
+    // OPTIMIZED: Process all windows in parallel using Promise.allSettled
+    const broadcasts = windows.map((window, index) => {
         if (window && window.webContents && !window.isDestroyed()) {
             try {
-                console.log(`📡 Broadcasting '${eventName}' to window ${index + 1}`);
                 window.webContents.send(eventName, data);
+                sentCount++;
+                return Promise.resolve(index);
             } catch (error) {
-                console.error(`❌ Error broadcasting to window ${index + 1}:`, error);
+                console.error(`❌ Broadcast error window ${index + 1}:`, error.message);
+                return Promise.reject(error);
             }
         }
+        return Promise.resolve(null);
     });
     
-    // Also ensure main window gets the message
-    if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+    // OPTIMIZED: Log only summary for better performance
+    console.log(`⚡ [BROADCAST] ${eventName} → ${sentCount} windows`);
+    
+    // OPTIMIZED: Ensure main window gets message without duplicate check
+    if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed() && !windows.includes(mainWindow)) {
         try {
-            console.log(`📡 Broadcasting '${eventName}' to main window (fallback)`);
             mainWindow.webContents.send(eventName, data);
         } catch (error) {
-            console.error('❌ Error broadcasting to main window:', error);
+            console.error('❌ Main window broadcast error:', error.message);
         }
     }
 }
@@ -948,31 +1002,35 @@ function sendAudioToMainWindow() {
     sendAudioToAllWindows();
 }
 
-// Function to stop current audio - ENHANCED VERSION
+// Function to stop current audio - ENHANCED VERSION FOR IMMEDIATE RESET
 function stopCurrentAudio() {
-    console.log('🛑 Stopping current audio sequence and any pending loops');
+    console.log('🛑 [MAIN] IMMEDIATE STOP: Stopping current audio sequence and any pending loops');
+    
+    // CRITICAL: Set flags immediately to prevent any new audio commands
     isAudioPlaying = false;
     currentAudioSequence = null;
     
     // CRITICAL: Clear currentlyPlayingAudio to prevent restoration of stopped audio
     currentlyPlayingAudio = null;
-    console.log('🗑️ Cleared currentlyPlayingAudio to prevent restoration after stop');
+    console.log('🗑️ [MAIN] Cleared currentlyPlayingAudio to prevent restoration after stop');
     
-    // Clear global audio player timeout
+    // CRITICAL: Clear ALL audio-related timeouts immediately
     if (globalAudioPlayer) {
         clearTimeout(globalAudioPlayer);
         globalAudioPlayer = null;
+        console.log('🗑️ [MAIN] Cleared global audio player timeout');
     }
     
-    // Clear loop delay timeout to prevent next loop from starting
+    // CRITICAL: Clear loop delay timeout to prevent next loop from starting
     if (loopDelayTimeout) {
         clearTimeout(loopDelayTimeout);
         loopDelayTimeout = null;
-        console.log('Cleared pending loop delay timeout');
+        console.log('🗑️ [MAIN] Cleared pending loop delay timeout');
     }
     
-    // Send stop command to all windows
+    // CRITICAL: Send IMMEDIATE stop command to all windows
     broadcastToAllWindows('stop-persistent-audio', {});
+    console.log('📡 [MAIN] Sent immediate stop command to all windows');
 }
 
 // Handler untuk callback dari renderer ketika audio selesai
@@ -1166,42 +1224,94 @@ ipcMain.handle('get-master-data', async () => {
     return config.masterData || [];
 });
 
-// Kirim data serial ke main window (yang bisa berisi index.html atau display.html)
+// OPTIMIZED: Pre-compiled regex patterns for better performance
+const VALID_SERIAL_PATTERNS = [
+    /^(10|90)\d{1,2}$/, // 10x, 90x, 10xx, 90xx format
+    /^(99|100)$/, // standby codes
+    /^(10|90)\d{1,2}:$/, // with colon suffix
+    /^99:$/ // 99: standby code with colon
+];
+
+const SANITIZE_REGEX = /[^a-zA-Z0-9:]/g;
+
+// Kirim data serial ke main window (yang bisa berisi index.html atau display.html) - OPTIMIZED
 function sendSerialToWindows(data) {
-    // CRITICAL FIX: Add input validation and sanitization
-    if (!data || typeof data !== 'string') {
-        console.error('Invalid serial data received:', typeof data, data);
+    // OPTIMIZED: Fast validation and early return
+    if (!data || typeof data !== 'string' || data.length === 0) {
         return;
     }
     
-    // Sanitize data - only allow alphanumeric characters and colon
-    let sanitizedData = data.replace(/[^a-zA-Z0-9:]/g, '').trim();
+    // OPTIMIZED: Single regex operation for sanitization
+    const sanitizedData = data.replace(SANITIZE_REGEX, '').trim();
     
-    // Validate format - must be numeric codes or specific keywords
-    const validPatterns = [
-        /^(10|90)\d{1,2}$/, // 10x, 90x, 10xx, 90xx format
-        /^(99|100)$/, // standby codes
-        /^(10|90)\d{1,2}:$/ // with colon suffix
-    ];
+    if (!sanitizedData) {
+        return;
+    }
     
-    const isValidFormat = validPatterns.some(pattern => pattern.test(sanitizedData));
+    // OPTIMIZED: Fast format validation using pre-compiled regex
+    const isValidFormat = VALID_SERIAL_PATTERNS.some(pattern => pattern.test(sanitizedData));
     
     if (!isValidFormat) {
-        console.warn('Invalid serial data format received:', data, '-> sanitized:', sanitizedData);
+        console.warn('❌ [SERIAL] Invalid format:', data, '→', sanitizedData);
         return;
     }
     
-    // Length validation
-    if (sanitizedData.length > 10) {
-        console.warn('Serial data too long, truncating:', sanitizedData);
-        sanitizedData = sanitizedData.substring(0, 10);
-    }
+    // OPTIMIZED: Fast data normalization
+    const processedData = sanitizedData.endsWith(':') ? 
+        sanitizedData.slice(0, -1) : 
+        sanitizedData;
     
-    console.log('Validated serial data:', sanitizedData);
+    // OPTIMIZED: Length check with early truncation
+    const finalData = processedData.length > 10 ? 
+        processedData.substring(0, 10) : 
+        processedData;
     
-    if (mainWindow) {
-        mainWindow.webContents.send('serial-data', sanitizedData);
-    }
+    console.log('⚡ [SERIAL] Processing:', finalData);
+    
+    // CRITICAL: Handle reset codes immediately in main process for faster response
+    if (finalData.startsWith('90')) {
+        const targetCode = '10' + finalData.substring(2);
+        console.log('⚡ [SERIAL] IMMEDIATE RESET:', targetCode);
+        
+        // OPTIMIZED: Batch operations for faster execution
+        let operationsPerformed = 0;
+        
+        // Stop audio immediately in main process
+        if (currentAudioSequence && currentAudioSequence.code === targetCode) {
+            stopCurrentAudio();
+            operationsPerformed++;
+        }
+        
+        // Remove from persistent sounds immediately
+        if (persistentSounds.has(targetCode)) {
+            persistentSounds.delete(targetCode);
+            operationsPerformed++;
+        }
+        
+        // Clear currentlyPlayingAudio if it matches
+        if (currentlyPlayingAudio && currentlyPlayingAudio.code === targetCode) {
+            currentlyPlayingAudio = null;
+            operationsPerformed++;
+        }
+        
+        // OPTIMIZED: Only broadcast if operations were performed
+        if (operationsPerformed > 0) {
+            // Use setImmediate for non-blocking broadcast
+            setImmediate(() => {
+                broadcastToAllWindows('persistent-sound-stopped', { code: targetCode });
+            });
+        }
+        
+        console.log(`⚡ [SERIAL] Reset operations: ${operationsPerformed}`);
+         }
+     
+     // OPTIMIZED: Send to windows immediately without blocking
+     if (mainWindow && !mainWindow.isDestroyed()) {
+         setImmediate(() => {
+             mainWindow.webContents.send('serial-data', finalData);
+         });
+         console.log('📤 [SERIAL] Queued to windows:', finalData);
+     }
 }
 
 // IPC handler untuk update config dari display
@@ -1545,6 +1655,57 @@ ipcMain.handle('save-notification-settings', async (event, settings) => {
     } catch (error) {
         console.error('Error saving notification settings:', error);
         return false;
+    }
+});
+
+// OPTIMIZED: Pre-defined test cases for faster access
+const TEST_CASES = [
+    '99',     // standby
+    '99:',    // standby with colon
+    '100',    // exit standby
+    '101',    // call code
+    '101:',   // call code with colon
+    '102:',   // another call code with colon
+    '901',    // reset code
+    '901:',   // reset code with colon
+    '1010',   // two digit call
+    '9010:',  // two digit reset with colon
+    'invalid', // invalid data
+    '999',    // invalid range
+    '10101',  // too long
+];
+
+// Handler untuk test serial parsing - OPTIMIZED for faster response
+ipcMain.handle('test-serial-parsing', async (event, testData) => {
+    try {
+        console.log('⚡ [TEST] Testing:', testData || 'all cases');
+        
+        if (testData) {
+            // OPTIMIZED: Immediate processing for single test
+            setImmediate(() => {
+                sendSerialToWindows(testData);
+            });
+            console.log('⚡ [TEST] Queued:', testData);
+            return { success: true, processed: 1 };
+        } else {
+            // OPTIMIZED: Faster batch testing with reduced delays
+            console.log('⚡ [TEST] Running batch tests...');
+            let processedCount = 0;
+            
+            TEST_CASES.forEach((testCase, index) => {
+                // OPTIMIZED: Reduced delay from 1000ms to 100ms for faster testing
+                setTimeout(() => {
+                    console.log(`⚡ [TEST] ${index + 1}/${TEST_CASES.length}: "${testCase}"`);
+                    sendSerialToWindows(testCase);
+                    processedCount++;
+                }, index * 100); // 100ms delay instead of 1000ms
+            });
+            
+            return { success: true, processed: TEST_CASES.length };
+        }
+    } catch (error) {
+        console.error('❌ [TEST] Error:', error);
+        return { success: false, error: error.message };
     }
 });
 

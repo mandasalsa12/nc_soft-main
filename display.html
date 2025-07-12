@@ -1912,8 +1912,8 @@
         async function processCall(code) {
             console.log('🚀 [DISPLAY] Processing call with code:', code);
             
-            // Khusus untuk kode standby
-            if (code === '99' || code === '99:') {
+            // Khusus untuk kode standby (99 atau 99: sudah di-normalize di main.js)
+            if (code === '99') {
                 const wasInStandby = standbyMode;
                 
                 // Set standby mode dan indikator
@@ -1948,6 +1948,24 @@
                 const bedNumber = code.substring(2);
                 const originalCode = `10${bedNumber}`;
                 
+                // CRITICAL: Prevent duplicate reset processing with throttling
+                const resetKey = `reset_${originalCode}`;
+                const now = Date.now();
+                
+                if (window.resetThrottleMap && window.resetThrottleMap[resetKey]) {
+                    const timeSinceLastReset = now - window.resetThrottleMap[resetKey];
+                    if (timeSinceLastReset < 2000) { // 2 second throttle
+                        console.log('🚫 [DISPLAY] Reset throttled for code:', originalCode, 'last reset:', timeSinceLastReset, 'ms ago');
+                        return;
+                    }
+                }
+                
+                // Initialize throttle map if not exists
+                if (!window.resetThrottleMap) {
+                    window.resetThrottleMap = {};
+                }
+                window.resetThrottleMap[resetKey] = now;
+                
                 console.log('🔄 [DISPLAY] Reset code detected:', code, '→ Original code:', originalCode);
                 console.log('🔍 [DISPLAY] Current active alerts before reset:', activeAlerts.length);
                 
@@ -1979,8 +1997,13 @@
                     renderShapes();
                 }
                 
-                // Update call history untuk reset
-                const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode);
+                // Update call history untuk reset - CRITICAL FIX: Check active status
+                console.log('🔍 [DISPLAY] Looking for active alert with code:', originalCode);
+                console.log('📊 [DISPLAY] Current active alerts:', activeAlerts.map(a => ({ code: a.code, status: a.status, id: a.id })));
+                
+                const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode && alert.status === 'active');
+                console.log('🎯 [DISPLAY] Found alert index:', alertIndex);
+                
                 if (alertIndex !== -1) {
                     const now = new Date();
                     const resetTimeStr = formatDateTime(now);
@@ -2018,8 +2041,30 @@
                         }
                     }, completedRemoveDelay); // Use configured duration instead of hardcoded 3000
                     
-                    console.log(`🔄 [DISPLAY] Reset alert ${originalCode} marked as completed and will be removed in ${completedRemoveDelay/1000} seconds`);
+                                        console.log(`🔄 [DISPLAY] Reset alert ${originalCode} marked as completed and will be removed in ${completedRemoveDelay/1000} seconds`);
                     console.log(`📊 [DISPLAY] Broadcasting update - Active alerts: ${activeAlerts.length}, Call history: ${callHistory.length}`);
+                } else {
+                    // CRITICAL FIX: Handle case when alert not found
+                    console.warn('⚠️ [DISPLAY] No active alert found for reset code:', originalCode);
+                    console.log('📋 [DISPLAY] Available active alerts:', activeAlerts.map(a => a.code));
+                    
+                    // Still try to stop persistent sounds and blinking even if alert not found
+                    try {
+                        console.log('🛑 [DISPLAY] Attempting to stop sounds/blinking anyway for code:', originalCode);
+                        const result = await ipcRenderer.invoke('stop-persistent-sounds', { code: originalCode });
+                        if (result.success) {
+                            console.log('✅ [DISPLAY] Persistent sound stopped for orphaned code:', originalCode);
+                        }
+                    } catch (error) {
+                        console.error('❌ [DISPLAY] Error stopping orphaned sound:', error);
+                    }
+                    
+                    // Remove dari persistent blinking anyway
+                    if (persistentBlinking.has(originalCode)) {
+                        persistentBlinking.delete(originalCode);
+                        console.log('🗑️ [DISPLAY] Removed orphaned blinking for code:', originalCode);
+                        await updatePersistentStateToMain();
+                    }
                 }
                 
                 // Remove dari persistent tracking

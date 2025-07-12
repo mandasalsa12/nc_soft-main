@@ -1673,8 +1673,8 @@
         async function processCall(code) {
             console.log('Processing call with code:', code);
             
-            // Khusus untuk kode standby
-            if (code === '99' || code === '99:') {
+            // Khusus untuk kode standby (99 atau 99: sudah di-normalize di main.js)
+            if (code === '99') {
                 const wasInStandby = standbyMode;
                 
                 // Set standby mode dan indikator
@@ -1708,8 +1708,26 @@
                 const bedNumber = code.substring(2);
                 const originalCode = `10${bedNumber}`;
                 
-                console.log('🔄 [DISPLAY] Reset code detected:', code, '→ Original code:', originalCode);
-                console.log('🔍 [DISPLAY] Current active alerts before reset:', activeAlerts.length);
+                // CRITICAL: Prevent duplicate reset processing with throttling
+                const resetKey = `reset_${originalCode}`;
+                const now = Date.now();
+                
+                if (window.resetThrottleMap && window.resetThrottleMap[resetKey]) {
+                    const timeSinceLastReset = now - window.resetThrottleMap[resetKey];
+                    if (timeSinceLastReset < 2000) { // 2 second throttle
+                        console.log('🚫 [DISPLAY_CONFIG] Reset throttled for code:', originalCode, 'last reset:', timeSinceLastReset, 'ms ago');
+                        return;
+                    }
+                }
+                
+                // Initialize throttle map if not exists
+                if (!window.resetThrottleMap) {
+                    window.resetThrottleMap = {};
+                }
+                window.resetThrottleMap[resetKey] = now;
+                
+                console.log('🔄 [DISPLAY_CONFIG] Reset code detected:', code, '→ Original code:', originalCode);
+                console.log('🔍 [DISPLAY_CONFIG] Current active alerts before reset:', activeAlerts.length);
                 
                 // Cari data di master data untuk validasi
                 const data = masterData.find(d => d.charCode === originalCode);
@@ -1733,8 +1751,13 @@
                     renderShapes();
                 }
                 
-                // Update call history untuk reset
-                const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode);
+                // Update call history untuk reset - CRITICAL FIX: Check active status
+                console.log('🔍 [DISPLAY_CONFIG] Looking for active alert with code:', originalCode);
+                console.log('📊 [DISPLAY_CONFIG] Current active alerts:', activeAlerts.map(a => ({ code: a.code, status: a.status, id: a.id })));
+                
+                const alertIndex = activeAlerts.findIndex(alert => alert.code === originalCode && alert.status === 'active');
+                console.log('🎯 [DISPLAY_CONFIG] Found alert index:', alertIndex);
+                
                 if (alertIndex !== -1) {
                     const now = new Date();
                     const resetTimeStr = formatDateTime(now);
@@ -1786,9 +1809,23 @@
             const displayText = `${data.roomName} - ${data.bedName}`;
             showNotification('success', `Reset: ${displayText}`);
             
-            console.log(`Reset processed for ${originalCode} - Audio stopped and persistent state cleared`);
-            return;
-            }
+                    console.log(`Reset processed for ${originalCode} - Audio stopped and persistent state cleared`);
+                } else {
+                    // CRITICAL FIX: Handle case when alert not found
+                    console.warn('⚠️ [DISPLAY_CONFIG] No active alert found for reset code:', originalCode);
+                    console.log('📋 [DISPLAY_CONFIG] Available active alerts:', activeAlerts.map(a => a.code));
+                    
+                    // Still stop audio and blinking anyway
+                    console.log('🛑 [DISPLAY_CONFIG] Stopping orphaned audio/blinking for code:', originalCode);
+                    await ipcRenderer.invoke('stop-persistent-sounds', { code: originalCode });
+                    
+                    // Remove dari persistent tracking anyway
+                    if (persistentSounds.has(originalCode)) {
+                        persistentSounds.delete(originalCode);
+                        console.log('🗑️ [DISPLAY_CONFIG] Removed orphaned persistent sound:', originalCode);
+                    }
+                }
+                return;
             
             // Untuk kode panggilan normal (10x atau 10xx)
             if (code.startsWith('10')) {
