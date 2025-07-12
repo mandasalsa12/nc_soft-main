@@ -54,6 +54,15 @@ let loopDelayTimeout = null; // Timeout reference for loop delay
 // Fungsi untuk mendapatkan path sounds yang benar
 function getSoundsPath() {
     if (app.isPackaged) {
+        // Untuk aplikasi yang di-package, gunakan userData directory agar writable
+        return path.join(app.getPath('userData'), 'sounds');
+    }
+    return path.join(__dirname, 'sounds');
+}
+
+// Fungsi untuk mendapatkan path sounds dari resources (read-only)
+function getResourceSoundsPath() {
+    if (app.isPackaged) {
         return path.join(process.resourcesPath, 'sounds');
     }
     return path.join(__dirname, 'sounds');
@@ -66,6 +75,49 @@ function ensureSoundsDirectory() {
         fs.mkdirSync(soundsDir, { recursive: true });
     }
     return soundsDir;
+}
+
+// Fungsi untuk menginisialisasi direktori sounds saat aplikasi di-package
+async function initializeSoundsDirectory() {
+    try {
+        const userSoundsDir = getSoundsPath(); // writable directory
+        const resourceSoundsDir = getResourceSoundsPath(); // read-only directory
+        
+        // Pastikan direktori userData/sounds ada
+        if (!fs.existsSync(userSoundsDir)) {
+            fs.mkdirSync(userSoundsDir, { recursive: true });
+        }
+        
+        // Copy sound files dari resources ke userData jika belum ada
+        if (fs.existsSync(resourceSoundsDir)) {
+            const resourceFiles = fs.readdirSync(resourceSoundsDir).filter(f => f.endsWith('.wav'));
+            let copiedCount = 0;
+            
+            for (const file of resourceFiles) {
+                const sourcePath = path.join(resourceSoundsDir, file);
+                const targetPath = path.join(userSoundsDir, file);
+                
+                // Copy hanya jika file belum ada di userData
+                if (!fs.existsSync(targetPath)) {
+                    try {
+                        fs.copyFileSync(sourcePath, targetPath);
+                        copiedCount++;
+                    } catch (copyError) {
+                        console.error('❌ [MAIN] Error copying sound file:', file, copyError);
+                    }
+                }
+            }
+            
+            if (copiedCount > 0) {
+                console.log(`✅ [MAIN] Copied ${copiedCount} sound files to writable directory`);
+            }
+            console.log(`📁 [MAIN] Sounds directory initialized: ${userSoundsDir}`);
+        } else {
+            console.log('⚠️ [MAIN] Resource sounds directory not found:', resourceSoundsDir);
+        }
+    } catch (error) {
+        console.error('❌ [MAIN] Error initializing sounds directory:', error);
+    }
 }
 
 function createMainWindow() {
@@ -248,12 +300,31 @@ function sendNotification(type, message) {
     }
 }
 
+// Fungsi untuk mendapatkan path config yang benar untuk aplikasi packaged
+function getConfigPath() {
+    if (app.isPackaged) {
+        // Saat di-package, simpan config di user data directory yang writable
+        return path.join(app.getPath('userData'), 'config.json');
+    } else {
+        // Saat development, simpan di direktori aplikasi
+        return path.join(__dirname, 'config.json');
+    }
+}
+
 function saveConfig(data) {
-    const configPath = path.join(__dirname, 'config.json');
+    const configPath = getConfigPath();
     try {
         if (!data) {
             console.error('Invalid data to save:', data);
             return false;
+        }
+
+        // Pastikan direktori userData ada jika aplikasi di-package
+        if (app.isPackaged) {
+            const userDataDir = app.getPath('userData');
+            if (!fs.existsSync(userDataDir)) {
+                fs.mkdirSync(userDataDir, { recursive: true });
+            }
         }
 
         if (!fs.existsSync(configPath)) {
@@ -269,6 +340,7 @@ function saveConfig(data) {
                 callHistoryStorage: [] // Persistent call history storage
             };
             fs.writeFileSync(configPath, JSON.stringify(initialData, null, 2));
+            console.log('Created initial config at:', configPath);
         }
 
         const existingData = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -278,7 +350,7 @@ function saveConfig(data) {
         };
 
         fs.writeFileSync(configPath, JSON.stringify(newData, null, 2));
-        console.log('Config saved successfully');
+        console.log('Config saved successfully to:', configPath);
         return true;
     } catch (error) {
         console.error('Error saving config:', error);
@@ -287,8 +359,28 @@ function saveConfig(data) {
 }
 
 function loadConfig() {
-    const configPath = path.join(__dirname, 'config.json');
+    const configPath = getConfigPath();
     try {
+        // Pastikan direktori userData ada jika aplikasi di-package
+        if (app.isPackaged) {
+            const userDataDir = app.getPath('userData');
+            if (!fs.existsSync(userDataDir)) {
+                fs.mkdirSync(userDataDir, { recursive: true });
+            }
+            
+            // Migrasi config dari lokasi lama jika ada
+            const oldConfigPath = path.join(__dirname, 'config.json');
+            if (!fs.existsSync(configPath) && fs.existsSync(oldConfigPath)) {
+                try {
+                    const oldConfigData = fs.readFileSync(oldConfigPath, 'utf-8');
+                    fs.writeFileSync(configPath, oldConfigData);
+                    console.log('✅ [MAIN] Migrated config from old location to:', configPath);
+                } catch (migrationError) {
+                    console.error('❌ [MAIN] Error migrating config:', migrationError);
+                }
+            }
+        }
+
         if (!fs.existsSync(configPath)) {
             const initialData = {
                 masterData: [],
@@ -302,6 +394,7 @@ function loadConfig() {
                 callHistoryStorage: []
             };
             fs.writeFileSync(configPath, JSON.stringify(initialData, null, 2));
+            console.log('Created initial config at:', configPath);
             return initialData;
         }
         
@@ -346,7 +439,7 @@ function loadConfig() {
             parsedData.callHistoryStorage = [];
         }
         
-        console.log('Config loaded and validated successfully');
+        console.log('Config loaded and validated successfully from:', configPath);
         return parsedData;
     } catch (error) {
         console.error('Error loading config:', error);
@@ -370,6 +463,16 @@ app.whenReady().then(async () => {
     app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
     
     console.log('🚀 [MAIN] Application starting up...');
+    console.log('📁 [MAIN] Application paths:');
+    console.log('  - isPackaged:', app.isPackaged);
+    console.log('  - configPath:', getConfigPath());
+    console.log('  - soundsPath:', getSoundsPath());
+    console.log('  - userDataPath:', app.getPath('userData'));
+    
+    // Initialize sounds directory untuk aplikasi yang di-package
+    if (app.isPackaged) {
+        await initializeSoundsDirectory();
+    }
     
     // CRITICAL: Initialize persistent call history FIRST before creating windows
     const historyLoaded = await initializePersistentCallHistory();
@@ -742,6 +845,21 @@ ipcMain.handle('save-config', async (event, config) => {
     return saveConfig(config);
 });
 
+// Handler untuk mendapatkan informasi path aplikasi
+ipcMain.handle('get-app-paths', async () => {
+    return {
+        isPackaged: app.isPackaged,
+        configPath: getConfigPath(),
+        soundsPath: getSoundsPath(),
+        resourceSoundsPath: getResourceSoundsPath(),
+        userDataPath: app.getPath('userData'),
+        appPath: app.getAppPath(),
+        resourcesPath: app.isPackaged ? process.resourcesPath : __dirname,
+        execPath: process.execPath,
+        platform: process.platform
+    };
+});
+
 ipcMain.handle('select-files', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile', 'multiSelections'],
@@ -762,11 +880,12 @@ ipcMain.handle('select-sound-files', async () => {
         });
 
         if (!result.canceled && result.filePaths.length > 0) {
-            const soundsDir = path.join(__dirname, 'sounds');
+            // Gunakan fungsi getSoundsPath untuk mendapatkan path yang benar
+            const soundsDir = getSoundsPath();
             
             // Buat direktori sounds jika belum ada
             if (!fs.existsSync(soundsDir)) {
-                fs.mkdirSync(soundsDir);
+                fs.mkdirSync(soundsDir, { recursive: true });
             }
 
             // Salin setiap file yang dipilih ke folder sounds
@@ -776,6 +895,7 @@ ipcMain.handle('select-sound-files', async () => {
                 
                 // Salin file
                 fs.copyFileSync(filePath, targetPath);
+                console.log('Sound file copied to:', targetPath);
             }
 
             return result.filePaths.map(filePath => path.basename(filePath));

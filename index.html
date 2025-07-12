@@ -779,8 +779,7 @@
                 showNotification('success', `Serial port sudah terhubung${masterSelectedPort ? ' (' + masterSelectedPort + ')' : ''}`);
                 
                 // Load sound files dan update indicators
-                loadSoundFiles();
-                updateSoundsIndicator();
+                await loadSoundFiles();
                 
                 // Update connection status
                 masterIsConnected = true;
@@ -793,8 +792,7 @@
                 await ipcRenderer.invoke('reset-navigation-flag');
                 
                 // Load sound files dan update indicators
-                loadSoundFiles();
-                updateSoundsIndicator();
+                await loadSoundFiles();
             } else {
                 // Normal startup - lakukan auto-connect seperti biasa
                 console.log('Normal startup, performing auto-connect check');
@@ -822,13 +820,13 @@
                             const portConnected = showNotification('success', `Terhubung ke Port Serial (${data.masterSettings.com})`);
                             
                             // Tunggu 2 detik, hilangkan notifikasi port terkoneksi
-                            setTimeout(() => {
+                            setTimeout(async () => {
                                 portConnected.remove();
                                 
                                 // Tampilkan notifikasi cek file sound
                                 const soundCheck = showNotification('info', 'Mengecek File Sound . . .');
                                 
-                                loadSoundFiles();
+                                await loadSoundFiles();
                                 
                                 // Tunggu 3 detik, hilangkan notifikasi cek sound
                                 setTimeout(() => {
@@ -953,8 +951,7 @@
                         
                         if (importedFiles && importedFiles.length > 0) {
                             // Refresh sound files list
-                            loadSoundFiles();
-                            updateSoundsIndicator();
+                            await loadSoundFiles();
                             
                             // Show success notification
                             showNotification('success', `Berhasil mengimpor ${importedFiles.length} file suara`);
@@ -1291,20 +1288,25 @@
                 }
             }
 
-            function loadSoundFiles() {
-                const fs = require('fs');
-                const path = require('path');
-                const appPath = require('electron').remote ? require('electron').remote.app.getAppPath() : require('@electron/remote').app.getAppPath();
-                const soundsDir = path.join(appPath, 'sounds');
-                
+            async function loadSoundFiles() {
                 try {
-                    if (!fs.existsSync(soundsDir)) {
-                        fs.mkdirSync(soundsDir);
+                    // Dapatkan path sounds dari main process
+                    const { soundsPath } = await ipcRenderer.invoke('get-app-paths');
+                    console.log('Loading sound files from:', soundsPath);
+                    
+                    const fs = require('fs');
+                    if (!fs.existsSync(soundsPath)) {
+                        fs.mkdirSync(soundsPath, { recursive: true });
                     }
-                    soundFiles = fs.readdirSync(soundsDir).filter(f => f.endsWith('.wav'));
-                    console.log('Loaded sound files:', soundFiles);
+                    
+                    soundFiles = fs.readdirSync(soundsPath).filter(f => f.endsWith('.wav'));
+                    console.log('Found sound files:', soundFiles);
+                    
+                    // Update UI indicators
+                    updateSoundsIndicator();
                 } catch (error) {
                     console.error('Error loading sound files:', error);
+                    showNotification('error', 'Gagal memuat file suara', 5000);
                 }
             }
             
@@ -1312,7 +1314,12 @@
                 const el = document.getElementById('sounds-indicator');
                 if (!el) return;
                 
-                if (soundFiles && soundFiles.length > 0) {
+                // Pastikan soundFiles sudah diinisialisasi
+                if (!Array.isArray(soundFiles)) {
+                    soundFiles = [];
+                }
+                
+                if (soundFiles.length > 0) {
                     el.classList.remove('bg-red-500');
                     el.classList.add('bg-green-500');
                 } else {
@@ -3800,6 +3807,18 @@
                     return { error: error.message };
                 }
             },
+            showAppPaths: async () => {
+                console.log('📁 [TEST] Getting application paths...');
+                try {
+                    const paths = await ipcRenderer.invoke('get-app-paths');
+                    console.log('📁 [TEST] Application paths:', paths);
+                    console.table(paths);
+                    return paths;
+                } catch (error) {
+                    console.error('📁 [TEST] Error getting paths:', error);
+                    return { error: error.message };
+                }
+            },
             testResetAllButton: () => {
                 console.log('🧪 [TEST] Testing reset all button click...');
                 const button = document.getElementById('reset-all-confirm');
@@ -3823,7 +3842,7 @@
         };
 
         console.log('🧪 [INDEX] Test functions loaded. Use window.testIndexCall for testing.');
-        console.log('Available test functions: test101(), test901(), test99(), test100(), testReset(code), forceStopSound(code), checkResetStatus(code), testSerialParsing(), debugState(), testResetAll(), testResetAllButton(), showResetAllModal()');
+        console.log('Available test functions: test101(), test901(), test99(), test100(), testReset(code), forceStopSound(code), checkResetStatus(code), testSerialParsing(), debugState(), testResetAll(), testResetAllButton(), showResetAllModal(), showAppPaths()');
     </script>
 
 
